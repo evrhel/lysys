@@ -15,28 +15,33 @@ struct ls_allocator
 	void (*free)(void *ptr);
 };
 
-void ls_init(void);
+void ls_init(const struct ls_allocator *allocator);
 
 void ls_shutdown(void);
 
-void ls_set_allocator(const struct ls_allocator *allocator);
-
 int ls_add_exit_hook(ls_exit_hook_t hook);
 
+//! \brief Exit the program.
+//!
+//! Exits the program with the specified status code. This function
+//! will call any registered exit hooks before the program exits.
+//!
+//! \param [in] status The status code to exit with.
 void ls_exit(int status);
 
 //! \brief Wait for a handle to become signaled.
 //! 
-//! This function waits for the specified handle to become signaled.
-//! If the handle is already signaled, the function returns
-//! immediately. If the handle is not signaled, the function blocks
-//! until the handle is signaled or an error occurs. Only some types
-//! of handles can be waited on. If the handle is not of a type that
+//! Waits for the specified handle to become signaled. If the handle
+//! is already signaled, the function returns immediately. If the handle
+//! is not signaled, the function blocks until the handle is signaled
+//! or an error occurs. Only some types of handles can be waited on (e.g.
+//! threads, processes, events, etc.). If the handle is not of a type that
 //! can be waited on, the function will fail.
 //! 
 //! \param [in] h The handle to wait for.
 //! 
-//! \return 0 if the handle is signaled, -1 if an error occurred.
+//! \return 0 if the handle is signaled, -1 if an error occurred. Use
+//! ls_error() to see additional error information.
 int ls_wait(ls_handle h);
 
 //! \brief Wait for a handle to become signaled, with a timeout.
@@ -49,7 +54,8 @@ int ls_wait(ls_handle h);
 //! \param [in] ms The timeout in milliseconds.
 //! 
 //! \return 0 if the handle is signaled, -1 if an error occurred, or
-//! 1 if the timeout expired.
+//! 1 if the timeout expired. Use ls_error() to see additional error
+//! information.
 int ls_timedwait(ls_handle h, unsigned long ms);
 
 //! \brief Close a handle.

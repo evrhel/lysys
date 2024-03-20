@@ -5,25 +5,31 @@
 #include "ls_native.h"
 #include "ls_handle.h"
 
-#if LS_WINDOWS
-
-static int ls_event_wait(HANDLE hEvent)
+static void LS_CLASS_FN ls_event_dtor(PHANDLE phEvent)
 {
+#if LS_WINDOWS
+	CloseHandle(*phEvent);
+#endif
+}
+
+static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent)
+{
+#if LS_WINDOWS
 	DWORD dwResult;
 
-	dwResult = WaitForSingleObject(hEvent, INFINITE);
+	dwResult = WaitForSingleObject(*phEvent, INFINITE);
 	if (dwResult == WAIT_OBJECT_0) return 0;
 
 	return -1;
-}
 #endif
+}
 
 static struct ls_class EventClass = {
 	.type = LS_EVENT,
 #if LS_WINDOWS
 	.cb = sizeof(HANDLE),
-	.dtor = (ls_dtor_t)&CloseHandle,
 #endif
+	.dtor = (ls_dtor_t)&ls_event_dtor,
 	.wait = (ls_wait_t)&ls_event_wait
 };
 
@@ -41,20 +47,20 @@ ls_handle ls_event_create(void)
 int ls_event_signaled(ls_handle evt)
 {
 #if LS_WINDOWS
-	return WaitForSingleObject(evt, 0) == WAIT_OBJECT_0;
+	return WaitForSingleObject(*(PHANDLE)evt, 0) == WAIT_OBJECT_0;
 #endif
 }
 
 int ls_event_set(ls_handle evt)
 {
 #if LS_WINDOWS
-	return !SetEvent(evt);
+	return !SetEvent(*(PHANDLE)evt);
 #endif
 }
 
 int ls_event_reset(ls_handle evt)
 {
 #if LS_WINDOWS
-	return !ResetEvent(evt);
+	return !ResetEvent(*(PHANDLE)evt);
 #endif
 }

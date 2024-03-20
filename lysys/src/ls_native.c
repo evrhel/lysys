@@ -242,28 +242,28 @@ LPWSTR ls_build_environment(const char *envp[])
 	int rc;
 
 	LPWSTR str = NULL;
+	
+	if (!envp)
+		return NULL;
 
 	ZeroMemory(&buf, sizeof(buf));
 
-	if (envp)
+	while (*envp)
 	{
-		while (*envp)
-		{
-			str = ls_utf8_to_wchar(*envp);
-			if (!str) goto failure;
+		str = ls_utf8_to_wchar(*envp);
+		if (!str) goto failure;
 
-			len = wcslen(str);
+		len = wcslen(str);
 
-			rc = ls_buffer_write(&buf, str, len * sizeof(WCHAR));
-			if (rc == -1) goto failure;
+		rc = ls_buffer_write(&buf, str, len * sizeof(WCHAR));
+		if (rc == -1) goto failure;
 
-			rc = ls_buffer_put_wchar(&buf, L'\0');
-			if (rc == -1) goto failure;
+		rc = ls_buffer_put_wchar(&buf, L'\0');
+		if (rc == -1) goto failure;
 
-			ls_free(str);
+		ls_free(str);
 
-			envp++;
-		}
+		envp++;
 	}
 
 	str = NULL;

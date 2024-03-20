@@ -23,4 +23,8 @@ set(LYSYS_SOURCES
 
 add_library(liblysys STATIC ${LYSYS_SOURCES})
 
+if (WIN32)
+    target_link_libraries(liblysys PRIVATE shlwapi)
+endif()
+
 target_include_directories(liblysys PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

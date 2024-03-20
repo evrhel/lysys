@@ -115,6 +115,7 @@ ls_handle ls_opendir(const char *path)
 
 	len = ls_utf8_to_wchar_buf(path, szPath, MAX_PATH);
 	if (!len) return NULL;
+	len--; // remove the null terminator
 
 	if (szPath[len - 1] != L'\\')
 		szPath[len++] = L'\\';

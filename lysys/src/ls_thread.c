@@ -4,6 +4,7 @@
 #include <lysys/ls_core.h>
 
 #include "ls_handle.h"
+#include "ls_internals.h"
 
 struct ls_thread
 {
@@ -28,7 +29,8 @@ static int LS_CLASS_FN ls_thread_wait(struct ls_thread *th)
 #if LS_WINDOWS
 	DWORD dwResult;
 
-	if (!th->hThread) return 0;
+	if (!th->hThread)
+		return 0;
 
 	dwResult = WaitForSingleObject(th->hThread, INFINITE);
 	if (dwResult == WAIT_OBJECT_0)
@@ -91,6 +93,21 @@ unsigned long ls_thread_self(void)
 {
 #if LS_WINDOWS
 	return GetCurrentThreadId();
+#endif
+}
+
+int ls_is_active_thread_id(unsigned long id)
+{
+#if LS_WINDOWS
+	HANDLE hThread;
+	hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, id);
+	if (hThread)
+	{
+		CloseHandle(hThread);
+		return 1;
+	}
+
+	return 0;
 #endif
 }
 

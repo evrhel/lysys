@@ -2,7 +2,7 @@
 #define _LS_DEFS_H_
 
 #if defined(_DEBUG) || defined(DEBUG)
-#define LS_DEBUG
+#define LS_DEBUG 1
 #endif
 
 #if defined(WIN32) || defined(_WIN32)
@@ -38,7 +38,7 @@
 
 #if _WIN64 || __x86_64__ || __ppc64__
 	#define LS_x86_64 1
-	#define LYSYS_ARCH "x86_64"
+	#define LS_ARCH "x86_64"
 #elif _WIN32 || __i386__ || __ppc__
 	#define LS_x86 1
 	#define LS_ARCH "x86"

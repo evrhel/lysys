@@ -9,13 +9,20 @@
 #include "ls_native.h"
 
 #if LS_WINDOWS
+static void LS_CLASS_FN ls_mmap_dtor(PHANDLE phMap)
+{
+	CloseHandle(*phMap);
+}
+#endif
+
 static struct ls_class FileMappingClass = {
 	.type = LS_FILEMAPPING,
+#if LS_WINDOWS
 	.cb = sizeof(HANDLE),
-	.dtor = (ls_dtor_t)&CloseHandle,
+#endif
+	.dtor = (ls_dtor_t)&ls_mmap_dtor,
 	.wait = NULL
 };
-#endif
 
 void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle *map)
 {

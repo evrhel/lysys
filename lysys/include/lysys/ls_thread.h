@@ -13,4 +13,4 @@ unsigned long ls_thread_self(void);
 
 void ls_yield(void);
 
-#endif
+#endif // _LS_THREAD_H_

@@ -11,10 +11,15 @@
 #include "ls_native.h"
 
 #if LS_WINDOWS
+static void LS_CLASS_FN file_dtor(PHANDLE phFile)
+{
+	CloseHandle(*phFile);
+}
+
 static struct ls_class FileClass = {
 	.type = LS_FILE,
 	.cb = sizeof(HANDLE),
-	.dtor = (ls_dtor_t)&CloseHandle,
+	.dtor = &file_dtor,
 	.wait = NULL
 };
 #endif
@@ -55,8 +60,9 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 	BOOL bRet;
 	LARGE_INTEGER liDist = { .QuadPart = offset };
 	LARGE_INTEGER liNewPointer;
+	HANDLE hFile = *(PHANDLE)file;
 		
-	bRet = SetFilePointerEx(file, liDist, &liNewPointer, origin);
+	bRet = SetFilePointerEx(hFile, liDist, &liNewPointer, origin);
 	if (!bRet)
 		return -1;
 
@@ -72,6 +78,7 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 	DWORD dwRead, dwToRead;
 	size_t remaining;
 	LPOVERLAPPED lpOverlapped;
+	HANDLE hFile = *(PHANDLE)file;
 
 	remaining = size;
 	dwToRead = (DWORD)(remaining & 0xffffffff);
@@ -85,7 +92,7 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 		lpOverlapped->Offset = (DWORD)(async->offset & 0xffffffff);
 		lpOverlapped->OffsetHigh = (DWORD)(async->offset >> 32);
 
-		bRet = ReadFile(file, buffer, dwToRead, NULL, lpOverlapped);
+		bRet = ReadFile(hFile, buffer, dwToRead, NULL, lpOverlapped);
 		if (!bRet)
 		{
 			if (GetLastError() != ERROR_IO_PENDING)
@@ -98,7 +105,7 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 	while (remaining != 0)
 	{
 		
-		bRet = ReadFile(file, buffer, dwToRead, &dwRead, NULL);
+		bRet = ReadFile(hFile, buffer, dwToRead, &dwRead, NULL);
 		if (!bRet)
 			return -1;
 
@@ -122,6 +129,7 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 	DWORD dwWritten, dwToWrite;
 	size_t remaining;
 	LPOVERLAPPED lpOl;
+	HANDLE hFile = *(PHANDLE)file;
 
 	remaining = size;
 	dwToWrite = (DWORD)(remaining & 0xffffffff);
@@ -135,7 +143,7 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 		lpOl->Offset = (DWORD)(async->offset & 0xffffffff);
 		lpOl->OffsetHigh = (DWORD)(async->offset >> 32);
 		
-		bRet = WriteFile(file, buffer, dwToWrite, NULL, lpOl);
+		bRet = WriteFile(hFile, buffer, dwToWrite, NULL, lpOl);
 		if (!bRet)
 		{
 			if (GetLastError() != ERROR_IO_PENDING)
@@ -147,7 +155,7 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 
 	while (remaining != 0)
 	{
-		bRet = WriteFile(file, buffer, dwToWrite, &dwWritten, NULL);
+		bRet = WriteFile(hFile, buffer, dwToWrite, &dwWritten, NULL);
 		if (!bRet)
 			return -1;
 
@@ -164,7 +172,7 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 int ls_flush(ls_handle file)
 {
 #if LS_WINDOWS
-	return FlushFileBuffers(file) ? 0 : -1;
+	return FlushFileBuffers(*(PHANDLE)file) ? 0 : -1;
 #endif
 }
 
@@ -176,8 +184,9 @@ int ls_get_async_io_result(ls_handle file, struct ls_async_io *async,
 	BOOL bRet;
 	LPOVERLAPPED lpOl = (LPOVERLAPPED)async->reserved;
 	DWORD dwStatus;
+	HANDLE hFile = *(PHANDLE)file;
 	
-	bRet = GetOverlappedResultEx(file, lpOl, &dwRet, ms, FALSE);
+	bRet = GetOverlappedResultEx(hFile, lpOl, &dwRet, ms, FALSE);
 	if (!bRet)
 	{
 		dwStatus = GetLastError();
@@ -200,8 +209,9 @@ int ls_get_async_io_result(ls_handle file, struct ls_async_io *async,
 int ls_cancel_async_io(ls_handle file, struct ls_async_io *async)
 {
 #if LS_WINDOWS
+	HANDLE hFile = *(PHANDLE)file;
 	LPOVERLAPPED lpOl = async ? (LPOVERLAPPED)async->reserved : NULL;
-	return CancelIoEx(file, lpOl) ? 0 : -1;
+	return CancelIoEx(hFile, lpOl) ? 0 : -1;
 #endif
 }
 

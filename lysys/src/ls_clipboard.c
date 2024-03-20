@@ -1,6 +1,7 @@
 #include <lysys/ls_clipboard.h>
 
 #include <lysys/ls_core.h>
+#include <lysys/ls_error.h>
 
 #include "ls_native.h"
 
@@ -11,11 +12,13 @@ intptr_t ls_register_clipboard_format(const char *name)
 	LPWSTR lpName;
 
 	lpName = ls_utf8_to_wchar(name);
-	if (!lpName) return 0;
+	if (!lpName)
+		return -1;
 
 	id = RegisterClipboardFormatW(lpName);
 	free(lpName);
-	if (!id) return -1;
+	if (!id)
+		return -1;
 	
 	return (intptr_t)id;
 #endif
@@ -60,6 +63,7 @@ int ls_set_clipboard_data(intptr_t fmt, const void *data, size_t cb)
 	}
 
 	CloseClipboard();
+
 	return 0;
 #endif
 }
@@ -84,6 +88,7 @@ int ls_clear_clipboard_data(void)
 	}
 
 	CloseClipboard();
+
 	return 0;
 #endif
 }
@@ -113,7 +118,7 @@ size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb)
 		CloseClipboard();
 		return -1;
 	}
-
+	
 	stSize = GlobalSize(hGlbl);
 	if (cb == 0)
 	{
