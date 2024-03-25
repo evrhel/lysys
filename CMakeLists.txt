@@ -21,6 +21,10 @@ set(LYSYS_SOURCES
     ${src}/ls_thread.c
     ${src}/ls_time.c)
 
+if(APPLE)
+    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m)
+endif()
+
 add_library(liblysys STATIC ${LYSYS_SOURCES})
 
 if (WIN32)

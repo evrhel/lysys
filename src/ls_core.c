@@ -16,6 +16,12 @@ static size_t _num_exit_hooks = 0;
 
 static struct ls_allocator _allocator = {0};
 
+#if LS_DARWIN
+// ls_pasteboard.m
+void ls_init_pasteboard_APPLE(void);
+void ls_deinit_pasteboard_APPLE(void);
+#endif
+
 void ls_init(const struct ls_allocator *allocator)
 {
 #if LS_WINDOWS
@@ -29,14 +35,17 @@ void ls_init(const struct ls_allocator *allocator)
 	}
 #endif
 
+#if LS_DARWIN
+	ls_init_pasteboard_APPLE();
+#endif
+
 	if (allocator == NULL)
 	{
-		_allocator = (struct ls_allocator) {
+		_allocator = (struct ls_allocator){
 			.malloc = malloc,
 			.calloc = calloc,
 			.realloc = realloc,
-			.free = free
-		};
+			.free = free};
 	}
 	else
 		_allocator = *allocator;
@@ -54,6 +63,10 @@ void ls_shutdown(void)
 	_num_exit_hooks = 0;
 
 	memset(&_allocator, 0, sizeof(_allocator));
+
+#if LS_DARWIN
+	ls_deinit_pasteboard_APPLE();
+#endif
 }
 
 int ls_add_exit_hook(ls_exit_hook_t hook)
@@ -61,7 +74,8 @@ int ls_add_exit_hook(ls_exit_hook_t hook)
 	ls_exit_hook_t *hooks;
 
 	hooks = ls_realloc(_exit_hooks, (_num_exit_hooks + 1) * sizeof(ls_exit_hook_t));
-	if (hooks == NULL) return -1;
+	if (hooks == NULL)
+		return -1;
 
 	_exit_hooks = hooks;
 	_exit_hooks[_num_exit_hooks++] = hook;
@@ -75,7 +89,7 @@ void ls_exit(int status)
 
 	for (hook = _exit_hooks; hook < _exit_hooks + _num_exit_hooks; ++hook)
 		(*hook)(status);
-	
+
 	ls_shutdown();
 	exit(status);
 }

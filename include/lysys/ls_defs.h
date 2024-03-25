@@ -11,6 +11,12 @@
 #elif defined(__APPLE__) || defined(__MACH__)
 	#define LS_DARWIN 1
 	#include <TargetConditionals.h>
+    #include <Availability.h>
+    
+    #if __MAC_OS_X_VERSION_MAX_ALLOWED < 100000
+        #error "macOS version too low"
+    #endif
+
 	#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 		#define LS_IOS 1
 		#define LS_OS "ios"
@@ -55,5 +61,6 @@
 typedef void *ls_handle;
 
 #include <stdint.h>
+#include <stddef.h>
 
 #endif

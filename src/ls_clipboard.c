@@ -1,9 +1,17 @@
 #include <lysys/ls_clipboard.h>
 
 #include <lysys/ls_core.h>
-#include <lysys/ls_error.h>
 
 #include "ls_native.h"
+
+#if LS_DARWIN
+// ls_pasteboard.m
+intptr_t ls_register_pasteboard_format_APPLE(const char *name);
+int ls_set_pasteboard_data_APPLE(intptr_t fmt, const void *data, size_t cb);
+int ls_set_pasteboard_text_APPLE(const char *text);
+int ls_clear_pasteboard_data_APPLE(void);
+size_t ls_get_clipboard_data_APPLE(intptr_t fmt, void *data, size_t cb);
+#endif
 
 intptr_t ls_register_clipboard_format(const char *name)
 {
@@ -19,8 +27,10 @@ intptr_t ls_register_clipboard_format(const char *name)
 	free(lpName);
 	if (!id)
 		return -1;
-	
+
 	return (intptr_t)id;
+#elif LS_DARWIN
+	return ls_register_pasteboard_format_APPLE(name);
 #endif
 }
 
@@ -41,7 +51,7 @@ int ls_set_clipboard_data(intptr_t fmt, const void *data, size_t cb)
 		CloseClipboard();
 		return -1;
 	}
-	
+
 	lpMem = GlobalLock(hGlbl);
 	if (!lpMem)
 	{
@@ -65,6 +75,8 @@ int ls_set_clipboard_data(intptr_t fmt, const void *data, size_t cb)
 	CloseClipboard();
 
 	return 0;
+#elif LS_DARWIN
+	return ls_set_pasteboard_data_APPLE(fmt, data, cb);
 #endif
 }
 
@@ -72,6 +84,7 @@ int ls_set_clipboard_text(const char *text)
 {
 #if LS_WINDOWS
 	return ls_set_clipboard_data(CF_TEXT, text, strlen(text));
+#elif LS_DARWIN
 #endif
 }
 
@@ -90,6 +103,8 @@ int ls_clear_clipboard_data(void)
 	CloseClipboard();
 
 	return 0;
+#elif LS_DARWIN
+	return ls_clear_pasteboard_data_APPLE();
 #endif
 }
 
@@ -118,7 +133,7 @@ size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb)
 		CloseClipboard();
 		return -1;
 	}
-	
+
 	stSize = GlobalSize(hGlbl);
 	if (cb == 0)
 	{
@@ -136,5 +151,7 @@ size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb)
 
 	CloseClipboard();
 	return stSize;
+#elif LS_DARWIN
+	return ls_get_clipboard_data_APPLE(fmt, data, cb);
 #endif
 }

@@ -39,4 +39,9 @@ LPWSTR ls_build_environment(const char *envp[]);
 
 #endif // LS_WINDOWS
 
+#if LS_DARWIN
+#include <CoreFoundation/CoreFoundation.h>
+#include <AppKit/AppKit.h>
+#endif // LS_DARWIN
+
 #endif // _LS_NATIVE_H_
