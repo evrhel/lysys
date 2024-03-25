@@ -8,6 +8,12 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 #include <Shlwapi.h>
+#include <Shlobj.h>
+
+// at least Windows 2000
+#if WINVER < _WIN32_WINNT_WIN2K
+#error "Windows version too old"
+#endif
 
 // utf8 string to wchar_t string
 // returns number of characters written to buf, including null terminator

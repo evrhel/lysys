@@ -6,6 +6,7 @@
 #define LS_WAITABLE 0x1000
 #define LS_READABLE 0x2000
 #define LS_WRITABLE 0x4000
+#define LS_FLAG_MASK 0x0fff
 
 #define LS_FILE (1 | LS_READABLE | LS_WRITABLE)
 #define LS_FILEMAPPING 2

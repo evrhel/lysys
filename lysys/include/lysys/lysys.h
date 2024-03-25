@@ -12,6 +12,7 @@
 #include "ls_shell.h"
 #include "ls_stat.h"
 #include "ls_sync.h"
+#include "ls_sysinfo.h"
 #include "ls_thread.h"
 #include "ls_time.h"
 

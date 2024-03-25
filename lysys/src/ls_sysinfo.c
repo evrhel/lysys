@@ -1,4 +1,4 @@
-#include <lysys/ls_info.h>
+#include <lysys/ls_sysinfo.h>
 
 #include "ls_native.h"
 

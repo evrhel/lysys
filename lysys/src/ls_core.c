@@ -9,6 +9,8 @@
 #include <lysys/ls_sync.h>
 #include <lysys/ls_thread.h>
 
+#include "ls_native.h"
+
 static ls_exit_hook_t *_exit_hooks = NULL;
 static size_t _num_exit_hooks = 0;
 
@@ -16,6 +18,17 @@ static struct ls_allocator _allocator = {0};
 
 void ls_init(const struct ls_allocator *allocator)
 {
+#if LS_WINDOWS
+	HRESULT hr;
+
+	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (!SUCCEDED(hr))
+	{
+		ls_error("CoInitializeEx failed: %08x", hr);
+		return;
+	}
+#endif
+
 	if (allocator == NULL)
 	{
 		_allocator = (struct ls_allocator) {
