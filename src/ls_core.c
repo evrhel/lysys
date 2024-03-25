@@ -22,11 +22,8 @@ void ls_init(const struct ls_allocator *allocator)
 	HRESULT hr;
 
 	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if (!SUCCEDED(hr))
-	{
-		ls_error("CoInitializeEx failed: %08x", hr);
-		return;
-	}
+	if (!SUCCEEDED(hr))
+		abort();
 #endif
 
 #if LS_DARWIN

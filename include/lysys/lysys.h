@@ -15,5 +15,6 @@
 #include "ls_sysinfo.h"
 #include "ls_thread.h"
 #include "ls_time.h"
+#include "ls_window.h"
 
 #endif // _LYSYS_H_

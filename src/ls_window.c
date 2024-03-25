@@ -40,6 +40,8 @@ int ls_dialog_message(void *parent, const char *title, const char *message, int 
 
     switch (flags & LS_DIALOG_ICON_MASK)
     {
+    case 0:
+        break;
     case LS_DIALOG_ERROR:
         type |= MB_ICONHAND;
         break;
@@ -113,6 +115,18 @@ int ls_dialog_input(void *parent, const char *title, const char *message, char *
 #if LS_WINDOWS
     return -1;
 #endif // LS_WINDOWS
+}
+
+static size_t filter_array_len( const file_filter_t *filters )
+{
+    size_t len = 0;
+
+    if (filters == NULL)
+        return 0;
+
+    while (filters[len].name)
+        len++;
+    return len;
 }
 
 #if LS_WINDOWS
@@ -315,8 +329,8 @@ static HRESULT to_filter_spec(const file_filter_t *filters, COMDLG_FILTERSPEC *l
 out_of_memory:
     for (; i != -1; i--)
     {
-        ls_free(lpFilterSpecs[i].pszName);
-        ls_free(lpFilterSpecs[i].pszSpec);
+        ls_free((void *)lpFilterSpecs[i].pszName);
+        ls_free((void *)lpFilterSpecs[i].pszSpec);
     }
 
     return E_OUTOFMEMORY;
@@ -327,7 +341,7 @@ struct win32_file_open_info
     // input
 
     HWND hwnd;
-    const COMDLG_FILTERSPEC *lpFileTypes; // allocated with CoTaskMemAlloc
+    COMDLG_FILTERSPEC *lpFileTypes; // allocated with CoTaskMemAlloc
     UINT cFileTypes;
     int flags;
     
@@ -352,7 +366,7 @@ static HRESULT ls_init_file_open_info(void *parent, const file_filter_t *filters
     lpFoi->hwnd = parent;
 
     // convert filters to COMDLG_FILTERSPEC array
-    lpFoi->cFileTypes = filter_array_len(filters);
+    lpFoi->cFileTypes = (UINT)filter_array_len(filters);
     lpFoi->lpFileTypes = CoTaskMemAlloc(lpFoi->cFileTypes * sizeof(COMDLG_FILTERSPEC));
     if (!lpFoi->lpFileTypes)
         return E_OUTOFMEMORY;
@@ -440,12 +454,12 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
     if (!SUCCEEDED(hr))
         return hr;
 
-    // show the dialog
+    // show the dialog and wait for it to close
     hr = foi->pfd->lpVtbl->Show(foi->pfd, foi->hwnd);
     if (!SUCCEEDED(hr))
         return hr;
 
-    // wait for the result and get the file path
+    // get the result
     hr = foi->pfd->lpVtbl->GetResult(foi->pfd, &psiResult);
     if (!SUCCEEDED(hr))
         return hr;
@@ -458,14 +472,6 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
 }
 
 #endif
-
-static size_t filter_array_len(const file_filter_t *filters)
-{
-    size_t len = 0;
-    while (filters[len].name)
-        len++;
-    return len;
-}
 
 int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, char *filename, size_t size)
 {
@@ -480,9 +486,12 @@ int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, char *
     hr = ls_dialog_open_win32(&foi);
 
     if (SUCCEEDED(hr))
-        ls_wchar_to_utf8_buf(foi.pszFilePath, filename, size);
+        ls_wchar_to_utf8_buf(foi.pszFilePath, filename, (int)size);
 
     ls_release_file_open_info(&foi);
+    
+    if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED))
+		return 1;
 
     return SUCCEEDED(hr) ? 0 : -1;
 #endif // LS_WINDOWS

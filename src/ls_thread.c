@@ -4,7 +4,6 @@
 #include <lysys/ls_core.h>
 
 #include "ls_handle.h"
-#include "ls_internals.h"
 
 struct ls_thread
 {

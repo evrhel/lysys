@@ -19,7 +19,8 @@ set(LYSYS_SOURCES
     ${src}/ls_stat.c
     ${src}/ls_sync.c
     ${src}/ls_thread.c
-    ${src}/ls_time.c)
+    ${src}/ls_time.c
+    ${src}/ls_window.c)
 
 if(APPLE)
     list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m)
