@@ -16,12 +16,6 @@ static size_t _num_exit_hooks = 0;
 
 static struct ls_allocator _allocator = {0};
 
-#if LS_DARWIN
-// ls_pasteboard.m
-void ls_init_pasteboard_APPLE(void);
-void ls_deinit_pasteboard_APPLE(void);
-#endif
-
 void ls_init(const struct ls_allocator *allocator)
 {
 #if LS_WINDOWS
@@ -36,7 +30,7 @@ void ls_init(const struct ls_allocator *allocator)
 #endif
 
 #if LS_DARWIN
-	ls_init_pasteboard_APPLE();
+	ls_init_pasteboard();
 #endif
 
 	if (allocator == NULL)
@@ -65,7 +59,7 @@ void ls_shutdown(void)
 	memset(&_allocator, 0, sizeof(_allocator));
 
 #if LS_DARWIN
-	ls_deinit_pasteboard_APPLE();
+	ls_deinit_pasteboard();
 #endif
 }
 

@@ -8,10 +8,38 @@
 #include <lysys/ls_sync.h>
 #include <lysys/ls_core.h>
 
+#include "ls_native.h"
+
 static NSMutableSet<NSString *> *_formats = nil;
 static ls_handle _lock = NULL; // lock on adding/reading, _formats cannot have items removed
 
-int ls_init_pasteboard_APPLE(void)
+static NSString *find_format(intptr_t fmt)
+{
+    NSString *name;
+    NSString *format_name;
+    
+    if (fmt == LS_CF_TEXT)
+        return NSPasteboardTypeString;
+    
+    format_name = (NSString *)fmt;
+    
+    ls_lock(_lock);
+    
+    for (name in _formats)
+    {
+        if (format_name == name)
+        {
+            ls_unlock(_lock);
+            return format_name;
+        }
+    }
+    
+    ls_unlock(_lock);
+    
+    return nil;
+}
+
+int ls_init_pasteboard(void)
 {
     assert(_formats == nil && _lock == NULL);
     
@@ -24,7 +52,7 @@ int ls_init_pasteboard_APPLE(void)
     return 0;
 }
 
-void ls_deinit_pasteboard_APPLE(void)
+void ls_deinit_pasteboard(void)
 {
     assert(_formats != nil && _lock != NULL);
     
@@ -35,7 +63,7 @@ void ls_deinit_pasteboard_APPLE(void)
     _lock = NULL;
 }
 
-intptr_t ls_register_pasteboard_format_APPLE(const char *name)
+intptr_t ls_register_pasteboard_format(const char *name)
 {
     intptr_t format_id;
     NSString *format_name;
@@ -66,11 +94,16 @@ intptr_t ls_register_pasteboard_format_APPLE(const char *name)
     return format_id;
 }
 
-static int set_pasteboard_impl(NSString *format, const void *data, size_t cb)
+int ls_set_pasteboard_data(intptr_t fmt, const void *data, size_t cb)
 {
+    NSString *format;
     NSPasteboard *pb;
     NSData *nsd;
     BOOL rc;
+    
+    format = find_format(fmt);
+    if (format == nil)
+        return -1;
     
     pb = [NSPasteboard generalPasteboard];
     if (!pb)
@@ -85,41 +118,7 @@ static int set_pasteboard_impl(NSString *format, const void *data, size_t cb)
     return rc == YES ? 0 : -1;
 }
 
-int ls_set_pasteboard_data_APPLE(intptr_t fmt, const void *data, size_t cb)
-{
-    NSString *name;
-    NSString *format_name;
-    
-    // set standard formats
-    if (fmt == LS_CF_TEXT)
-        return set_pasteboard_impl(NSPasteboardTypeString, data, cb);
-    
-    format_name = (NSString *)fmt;
-    
-    ls_lock(_lock);
-    
-    // check if format was registered
-    for (name in _formats)
-    {
-        // pointer comparison
-        if (format_name == name)
-        {
-            ls_unlock(_lock);
-            return set_pasteboard_impl(name, data, cb);
-        }
-    }
-    
-    ls_unlock(_lock);
-    
-    return -1;
-}
-
-int ls_set_pasteboard_text_APPLE(const char *text)
-{
-    return set_pasteboard_impl(NSPasteboardTypeString, text, strlen(text));
-}
-
-int ls_clear_pasteboard_data_APPLE(void)
+int ls_clear_pasteboard_data(void)
 {
     NSPasteboard *pb;
     
@@ -132,14 +131,29 @@ int ls_clear_pasteboard_data_APPLE(void)
     return 0;
 }
 
-static size_t get_pasteboard_data_impl(NSString *format, void *data, size_t cb)
+size_t ls_get_pasteboard_data(intptr_t fmt, void *data, size_t cb)
 {
-    // TODO: implement
-    return -1;
-}
-
-size_t ls_get_pasteboard_data_APPLE(intptr_t fmt, void *data, size_t cb)
-{
-    // TODO: implement
-    return -1;
+    NSString *format;
+    NSPasteboard *pb;
+    NSData *nsd;
+    size_t size;
+    
+    format = find_format(fmt);
+    if (format == nil)
+        return -1;
+    
+    pb = [NSPasteboard generalPasteboard];
+    if (pb == nil)
+        return -1;
+    
+    nsd = [pb dataForType:format];
+    if (nsd == nil)
+        return -1;
+    
+    size = [nsd length];
+    
+    if (data != NULL)
+        [nsd getBytes:data length:cb];
+    
+    return size;
 }
