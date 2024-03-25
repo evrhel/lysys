@@ -4,7 +4,7 @@ lysys is a cross-platform C API to interact with functionality of the underlying
 
 - Windows (high support)
 - Darwin (minimal support)
-- Linux (planned)
+- Linux (minimal support)
 
 ## Building
 

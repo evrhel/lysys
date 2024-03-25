@@ -12,6 +12,8 @@
 	#define LS_DARWIN 1
 	#include <TargetConditionals.h>
     #include <Availability.h>
+
+    #define LS_POSIX 1
     
     #if __MAC_OS_X_VERSION_MAX_ALLOWED < 100000
         #error "macOS version too low"
@@ -38,6 +40,8 @@
 #elif defined(__linux__)
 	#define LS_LINUX 1
 	#define LS_OS "linux"
+
+    #define LS_POSIX 1
 #else
 	#define LS_OS "unknown"
 #endif // WIN32

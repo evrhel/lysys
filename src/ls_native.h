@@ -39,6 +39,11 @@ LPWSTR ls_build_environment(const char *envp[]);
 
 #endif // LS_WINDOWS
 
+#if LS_POSIX
+#include <pthread.h>
+#include <sys/time.h>
+#endif // LS_POSIX
+
 #if LS_DARWIN
 // ls_pasteboard.m
 int ls_init_pasteboard(void);

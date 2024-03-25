@@ -43,6 +43,10 @@ struct ls_handle_info
 	uint8_t data[0];		//!< Data of the handle
 };
 
+ls_handle ls_handle_alloc(struct ls_class *clazz);
+
+ls_handle ls_handle_init(ls_handle h);
+
 //! \brief Create handle from class.
 //! 
 //! \details Creates a new handle of the given class.
@@ -53,6 +57,11 @@ struct ls_handle_info
 //! \return The new handle. This is a pointer to the handle data. The
 //! data will be initialized to zero.
 ls_handle ls_handle_create(struct ls_class *clazz);
+
+//! \brief Deallocate memory used by the handle.
+//!
+//! \details Deallocates memory that was allocated through
+void ls_handle_dealloc(ls_handle h);
 
 //! \brief Retrieve handle information.
 //! 
