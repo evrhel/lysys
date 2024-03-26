@@ -3,6 +3,7 @@
 #include <lysys/ls_core.h>
 
 #include "ls_native.h"
+#include "ls_handle.h"
 
 int ls_dialog_message(void *parent, const char *title, const char *message, int flags)
 {
@@ -117,6 +118,25 @@ int ls_dialog_input(void *parent, const char *title, const char *message, char *
 #endif // LS_WINDOWS
 }
 
+struct open_dialog_results
+{
+    char *head;
+    char *current;
+};
+
+static void LS_CLASS_FN open_dialog_results_dtor(struct open_dialog_results *results)
+{
+    if (results->current)
+        ls_free(results->current);
+}
+
+static struct ls_class OpenDialogResultsClass = {
+	.type = LS_FILE_OPEN_DIALOG_RESULTS,
+	.cb = sizeof(struct open_dialog_results),
+	.dtor = &open_dialog_results_dtor,
+	.wait = NULL
+};
+
 static size_t filter_array_len( const file_filter_t *filters )
 {
     size_t len = 0;
@@ -152,8 +172,6 @@ typedef struct CDialogEventHandlerVtbl
     DECLSPEC_XFGVIRT(IUnknown, Release)
     ULONG(STDMETHODCALLTYPE *Release)(__RPC__in CDialogEventHandler *This);
 
-    // IFileDialogEvents
-
     DECLSPEC_XFGVIRT(IFileDialogEvents, OnFileOk)
     HRESULT(STDMETHODCALLTYPE *OnFileOk)(__RPC__in CDialogEventHandler *This, __RPC__in_opt IFileDialog *pfd);
 
@@ -174,8 +192,6 @@ typedef struct CDialogEventHandlerVtbl
 
     DECLSPEC_XFGVIRT(IFileDialogEvents, OnOverwrite)
     HRESULT(STDMETHODCALLTYPE *OnOverwrite)(__RPC__in CDialogEventHandler *This, __RPC__in_opt IFileDialog *pfd, __RPC__in_opt IShellItem *psi, __RPC__out FDE_OVERWRITE_RESPONSE *pResponse);
-
-    // IFileDialogControlEvents
 
     DECLSPEC_XFGVIRT(IFileDialogControlEvents, OnItemSelected)
     HRESULT(STDMETHODCALLTYPE *OnItemSelected)(__RPC__in CDialogEventHandler *This, __RPC__in_opt IFileDialogCustomize *pfdc, DWORD dwIDCtl, DWORD dwIDItem);
@@ -344,14 +360,16 @@ struct win32_file_open_info
     COMDLG_FILTERSPEC *lpFileTypes; // allocated with CoTaskMemAlloc
     UINT cFileTypes;
     int flags;
+
+    DWORD dwOptions;
     
     // output
 
-    PWSTR pszFilePath; // allocated with CoTaskMemAlloc
+    ls_handle results;
 
     // internal
 
-    IFileDialog *pfd;
+    IFileOpenDialog *pfd;
     IFileDialogEvents *pfde;
     IFileDialogControlEvents *pfce;
     DWORD dwCookie;
@@ -378,12 +396,23 @@ static HRESULT ls_init_file_open_info(void *parent, const file_filter_t *filters
         return hr;
     }
 
+    lpFoi->dwOptions = FOS_FORCEFILESYSTEM;
+
+    if (flags & LS_FILE_DIALOG_DIR)
+		lpFoi->dwOptions |= FOS_PICKFOLDERS;
+
+    if (flags & LS_FILE_DIALOG_MUST_EXIST)
+        lpFoi->dwOptions |= FOS_FILEMUSTEXIST;
+
+    if (flags & LS_FILE_DIALOG_MULTI)
+        lpFoi->dwOptions |= FOS_ALLOWMULTISELECT;
+
     // create the file dialog
     hr = CoCreateInstance(
         &CLSID_FileOpenDialog,
         NULL,
         CLSCTX_INPROC_SERVER,
-        &IID_IFileDialog,
+        &IID_IFileOpenDialog,
         (void **)&lpFoi->pfd);
         
     if (!SUCCEEDED(hr))
@@ -416,9 +445,6 @@ static HRESULT ls_init_file_open_info(void *parent, const file_filter_t *filters
 
 static HRESULT ls_release_file_open_info(struct win32_file_open_info *lpFoi)
 {
-    if (lpFoi->pszFilePath)
-        CoTaskMemFree(lpFoi->pszFilePath);
-
     if (lpFoi->dwCookie)
         lpFoi->pfd->lpVtbl->Unadvise(lpFoi->pfd, lpFoi->dwCookie);
 
@@ -438,13 +464,18 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
 {
     HRESULT hr;
     DWORD dwFlags;
-    IShellItem *psiResult;
+    LPWSTR lpszFilePath;
+    union
+    {
+        IShellItem *psiResult;
+        IShellItemArray *psiaResults;
+    } u;
 
     hr = foi->pfd->lpVtbl->GetOptions(foi->pfd, &dwFlags);
     if (!SUCCEEDED(hr))
         return hr;
 
-    dwFlags |= FOS_FORCEFILESYSTEM;
+    dwFlags |= foi->dwOptions;
     hr = foi->pfd->lpVtbl->SetOptions(foi->pfd, dwFlags);
     if (!SUCCEEDED(hr))
         return hr;
@@ -459,25 +490,52 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
     if (!SUCCEEDED(hr))
         return hr;
 
-    // get the result
-    hr = foi->pfd->lpVtbl->GetResult(foi->pfd, &psiResult);
-    if (!SUCCEEDED(hr))
-        return hr;
+    foi->results = ls_handle_create(&OpenDialogResultsClass);
+    if (!foi->results)
+		return E_OUTOFMEMORY;
 
-    hr = psiResult->lpVtbl->GetDisplayName(psiResult, SIGDN_FILESYSPATH, &foi->pszFilePath);
+    // get the result
+    if (dwFlags & FOS_ALLOWMULTISELECT)
+    {
+        hr = foi->pfd->lpVtbl->GetResults(foi->pfd, &u.psiaResults);
+        if (!SUCEEDED(hr))
+        {
+            ls_handle_dealloc(foi->results), foi->results = NULL;
+			return hr;
+        }
+
+        // TODO: add to results
+
+        u.psiaResults->lpVtbl->Release(u.psiaResults);
+    }
+    else
+    {        
+        hr = foi->pfd->lpVtbl->GetResult(foi->pfd, &u.psiResult);
+        if (!SUCCEEDED(hr))
+        {
+            ls_handle_dealloc(foi->results), foi->results = NULL;
+            return hr;
+        }
+
+        hr = u.psiResult->lpVtbl->GetDisplayName(u.psiResult, SIGDN_FILESYSPATH, &lpszFilePath);
+
+        // TODO: add to results
     
-    psiResult->lpVtbl->Release(psiResult);
+        u.psiResult->lpVtbl->Release(u.psiResult);
+    }
 
     return hr;
 }
 
 #endif
 
-int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, char *filename, size_t size)
+int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, ls_handle *results)
 {
 #if LS_WINDOWS
     HRESULT hr;
     struct win32_file_open_info foi;
+
+    *results = NULL;
 
     hr = ls_init_file_open_info(parent, filters, flags, &foi);
     if (!SUCCEEDED(hr))
@@ -486,7 +544,7 @@ int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, char *
     hr = ls_dialog_open_win32(&foi);
 
     if (SUCCEEDED(hr))
-        ls_wchar_to_utf8_buf(foi.pszFilePath, filename, (int)size);
+        *results = foi.results;
 
     ls_release_file_open_info(&foi);
     
@@ -497,16 +555,25 @@ int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, char *
 #endif // LS_WINDOWS
 }
 
-int ls_dialog_open_dir(void *parent, int flags, char *dirname, size_t size)
+int ls_dialog_save(void *parent, const file_filter_t *filters, int flags, char *filename, size_t size)
 {
 #if LS_WINDOWS
     return -1;
 #endif // LS_WINDOWS
 }
 
-int ls_dialog_save(void *parent, const file_filter_t *filters, int flags, char *filename, size_t size)
+const char *ls_dialog_next_file(ls_handle results)
 {
-#if LS_WINDOWS
-    return -1;
-#endif // LS_WINDOWS
+    struct open_dialog_results *r = results;
+    const char *rs;
+    size_t len;
+
+    rs = r->current;
+    if (!rs[0])
+		return NULL; // end of list
+
+    len = strlen(rs);
+    r->current += len + 1;
+
+    return rs;
 }
