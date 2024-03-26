@@ -49,9 +49,10 @@ int ls_dialog_input(void *parent, const char *title, const char *message, char *
 //! \details Shows a dialog that allows the user to select a single file.
 //!
 //! \param [in] parent The parent window of the dialog. HWND on Windows.
-//! \param [in] filters An array of file filters. If NULL, all files are shown.
+//! \param [in] filters An array of file filters. If NULL, all files are shown. Ignored if flags
+//! contains LS_FILE_DIALOG_DIR.
 //! \param [in] flags Flags that control the behavior of the dialog.
-//! \param [out] results A pointer to a handle that will receive the results of the dialog.
+//! \param [out] results A pointer to a handle that will iterate over the selected files.
 //!
 //! \return 0 if the user selected a file, 1 if the user canceled the dialog, and
 //!         -1 if an error occurred.
@@ -59,6 +60,14 @@ int ls_dialog_open(void *parent, const file_filter_t *filters, int flags, ls_han
 
 int ls_dialog_save(void *parent, const file_filter_t *filters, int flags, char *filename, size_t size);
 
+//! \brief Iterate over a dialog's selected files.
+//! 
+//! \details Retrieves the next selected file from a dialog's results and advances the iterator.
+//! If there are no more files, NULL is returned. Use ls_close to free the iterator.
+//! 
+//! \param [in] results An iterator obtained from ls_dialog_open.
+//! 
+//! \return The next selected file, or NULL if there are no more files.
 const char *ls_dialog_next_file(ls_handle results);
 
 #endif // _LS_WINDOW_H_

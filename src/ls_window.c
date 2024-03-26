@@ -122,12 +122,13 @@ struct open_dialog_results
 {
     char *head;
     char *current;
+    size_t size;
 };
 
 static void LS_CLASS_FN open_dialog_results_dtor(struct open_dialog_results *results)
 {
-    if (results->current)
-        ls_free(results->current);
+    if (results->head)
+        ls_free(results->head);
 }
 
 static struct ls_class OpenDialogResultsClass = {
@@ -136,6 +137,24 @@ static struct ls_class OpenDialogResultsClass = {
 	.dtor = &open_dialog_results_dtor,
 	.wait = NULL
 };
+
+static int add_result(struct open_dialog_results *results, const char *path)
+{
+    size_t size;
+    char *new_head;
+
+    size = strlen(path) + 1;
+    new_head = ls_realloc(results->head, results->size + size);
+    if (!new_head)
+		return -1;
+
+    results->head = new_head;
+	memcpy(results->head + results->size - 1, path, size);
+	results->size += size;
+    results->head[results->size - 1] = 0; // double null-terminated
+
+	return 0;
+}
 
 static size_t filter_array_len( const file_filter_t *filters )
 {
@@ -365,7 +384,7 @@ struct win32_file_open_info
     
     // output
 
-    ls_handle results;
+    struct open_dialog_results *results;
 
     // internal
 
@@ -465,11 +484,12 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
     HRESULT hr;
     DWORD dwFlags;
     LPWSTR lpszFilePath;
-    union
-    {
-        IShellItem *psiResult;
-        IShellItemArray *psiaResults;
-    } u;
+    CHAR szFilePath[MAX_PATH];
+    DWORD dwNumItems;
+    DWORD i;
+    int rc;
+    IShellItem *psiResult;
+    IShellItemArray *psiaResults;
 
     hr = foi->pfd->lpVtbl->GetOptions(foi->pfd, &dwFlags);
     if (!SUCCEEDED(hr))
@@ -481,9 +501,12 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
         return hr;
 
     // set the allowed file types
-    hr = foi->pfd->lpVtbl->SetFileTypes(foi->pfd, foi->cFileTypes, foi->lpFileTypes);
-    if (!SUCCEEDED(hr))
-        return hr;
+    if (foi->cFileTypes > 0)
+    {
+        hr = foi->pfd->lpVtbl->SetFileTypes(foi->pfd, foi->cFileTypes, foi->lpFileTypes);
+        if (!SUCCEEDED(hr))
+            return hr;
+    }
 
     // show the dialog and wait for it to close
     hr = foi->pfd->lpVtbl->Show(foi->pfd, foi->hwnd);
@@ -494,35 +517,98 @@ static HRESULT ls_dialog_open_win32(struct win32_file_open_info *foi)
     if (!foi->results)
 		return E_OUTOFMEMORY;
 
+    foi->results->head = ls_malloc(1);
+    if (!foi->results->head)
+    {
+        ls_close(foi->results), foi->results = NULL;
+        return E_OUTOFMEMORY;
+    }
+
+    foi->results->head[0] = 0;
+    foi->results->size = 1;
+
     // get the result
     if (dwFlags & FOS_ALLOWMULTISELECT)
     {
-        hr = foi->pfd->lpVtbl->GetResults(foi->pfd, &u.psiaResults);
-        if (!SUCEEDED(hr))
+        hr = foi->pfd->lpVtbl->GetResults(foi->pfd, &psiaResults);
+        if (!SUCCEEDED(hr))
         {
-            ls_handle_dealloc(foi->results), foi->results = NULL;
+            ls_close(foi->results), foi->results = NULL;
 			return hr;
         }
 
-        // TODO: add to results
+        hr = psiaResults->lpVtbl->GetCount(psiaResults, &dwNumItems);
+        if (!SUCCEEDED(hr))
+        {
+			psiaResults->lpVtbl->Release(psiaResults);
+            ls_close(foi->results), foi->results = NULL;
+			return hr;
+        }
 
-        u.psiaResults->lpVtbl->Release(u.psiaResults);
+       
+        for (i = 0; i < dwNumItems; i++)
+        {
+			hr = psiaResults->lpVtbl->GetItemAt(psiaResults, i, &psiResult);
+			if (!SUCCEEDED(hr))
+			{
+                psiaResults->lpVtbl->Release(psiaResults);
+                ls_close(foi->results), foi->results = NULL;
+                return hr;
+            }
+
+            hr = psiResult->lpVtbl->GetDisplayName(psiResult, SIGDN_FILESYSPATH, &lpszFilePath);
+
+            psiResult->lpVtbl->Release(psiResult);
+
+            if (!SUCCEEDED(hr))
+			{
+				psiaResults->lpVtbl->Release(psiaResults);
+                ls_close(foi->results), foi->results = NULL;
+				return hr;
+			}
+
+            ls_wchar_to_utf8_buf(lpszFilePath, szFilePath, sizeof(szFilePath));
+
+            rc = add_result(foi->results, szFilePath);
+
+            CoTaskMemFree(lpszFilePath);
+
+            if (rc == -1)
+            {
+                psiaResults->lpVtbl->Release(psiaResults);
+				ls_close(foi->results), foi->results = NULL;
+				return E_OUTOFMEMORY;
+            }
+        }
+
+        psiaResults->lpVtbl->Release(psiaResults);
     }
     else
     {        
-        hr = foi->pfd->lpVtbl->GetResult(foi->pfd, &u.psiResult);
+        hr = foi->pfd->lpVtbl->GetResult(foi->pfd, &psiResult);
         if (!SUCCEEDED(hr))
         {
-            ls_handle_dealloc(foi->results), foi->results = NULL;
+            ls_close(foi->results), foi->results = NULL;
             return hr;
         }
 
-        hr = u.psiResult->lpVtbl->GetDisplayName(u.psiResult, SIGDN_FILESYSPATH, &lpszFilePath);
+        hr = psiResult->lpVtbl->GetDisplayName(psiResult, SIGDN_FILESYSPATH, &lpszFilePath);
+            
+        psiResult->lpVtbl->Release(psiResult);        
 
-        // TODO: add to results
-    
-        u.psiResult->lpVtbl->Release(u.psiResult);
+        ls_wchar_to_utf8_buf(lpszFilePath, szFilePath, sizeof(szFilePath));
+
+        CoTaskMemFree(lpszFilePath);
+
+        rc = add_result(foi->results, szFilePath);
+        if (rc == -1)
+		{
+            ls_close(foi->results), foi->results = NULL;
+			return E_OUTOFMEMORY;
+		}
     }
+
+    foi->results->current = foi->results->head;
 
     return hr;
 }
