@@ -23,7 +23,7 @@ set(LYSYS_SOURCES
     ${src}/ls_window.c)
 
 if(APPLE)
-    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m)
+    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m ${src}/ls_window_cocoa.m)
 endif()
 
 add_library(liblysys STATIC ${LYSYS_SOURCES})

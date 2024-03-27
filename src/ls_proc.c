@@ -24,22 +24,18 @@ struct ls_proc_win32
 	char *name;
 	int path_len;
 };
-#endif
 
 static void LS_CLASS_FN ls_proc_dtor(struct ls_proc_win32 *proc)
 {
-#if LS_WINDOWS
 	if (proc->pi.hProcess)
 		CloseHandle(proc->pi.hProcess);	
 
 	if (proc->pi.hThread)
 		CloseHandle(proc->pi.hThread);
-#endif
 }
 
 static int LS_CLASS_FN ls_proc_wait(struct ls_proc_win32 *proc, unsigned long ms)
 {
-#if LS_WINDOWS
 	DWORD dwResult;
 
 	if (!proc->pi.hProcess) return 0;
@@ -48,8 +44,22 @@ static int LS_CLASS_FN ls_proc_wait(struct ls_proc_win32 *proc, unsigned long ms
 	if (dwResult == WAIT_OBJECT_0)
 		return 0;
 	return -1;
-#endif
 }
+
+#else
+
+static void LS_CLASS_FN ls_proc_dtor(void *ignored)
+{
+    // TODO: implement
+}
+
+static int LS_CLASS_FN ls_proc_wait(void *ignored, unsigned long ms)
+{
+    // TODO: implement
+    return 0;
+}
+
+#endif // LS_WINDOWS
 
 static struct ls_class ProcClass = {
 	.type = LS_PROC,
@@ -61,6 +71,7 @@ static struct ls_class ProcClass = {
 };
 
 #if LS_WINDOWS
+
 struct ls_pipe_server_win32
 {
 	HANDLE hPipe;
@@ -88,22 +99,18 @@ struct ls_pipe_client_win32
 	int is_error;
 	WCHAR szPipeName[LS_PIPE_NAME_SIZE];
 };
-#endif
 
 static void LS_CLASS_FN ls_pipe_server_dtor(struct ls_pipe_server_win32 *pipe)
 {
-#if LS_WINDOWS
 	if (pipe->hPipe)
 		CloseHandle(pipe->hPipe);
 
 	if (pipe->ov.hEvent)
 		CloseHandle(pipe->ov.hEvent);
-#endif
 }
 
 static int LS_CLASS_FN ls_pipe_server_wait(struct ls_pipe_server_win32 *pipe, unsigned long ms)
 {
-#if LS_WINDOWS
 	DWORD dwResult;
 
 	if (!pipe->hPipe) return 0;
@@ -112,12 +119,27 @@ static int LS_CLASS_FN ls_pipe_server_wait(struct ls_pipe_server_win32 *pipe, un
 	if (dwResult == WAIT_OBJECT_0)
 		return 0;
 	return -1;
-#endif
 }
+
+#else
+
+static void LS_CLASS_FN ls_pipe_server_dtor(void *ignored)
+{
+    // TODO: implement
+}
+
+static int LS_CLASS_FN ls_pipe_server_wait(void *ignored, unsigned long ms)
+{
+    // TODO: implement
+    return 0;
+}
+
+#endif // LS_WINDOWS
+
+#if LS_WINDOWS
 
 static int ls_try_open_pipe(LPCWSTR szPipeName, PHANDLE phPipe)
 {
-#if LS_WINDOWS
 	*phPipe = CreateFileW(szPipeName, GENERIC_READ | GENERIC_WRITE,
 		0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
@@ -128,12 +150,10 @@ static int ls_try_open_pipe(LPCWSTR szPipeName, PHANDLE phPipe)
 		return 1;
 
 	return -1;
-#endif
 }
 
 static int ls_pipe_open_now(LPCWSTR szPipeName, PHANDLE phPipe, unsigned long ms)
 {
-#if LS_WINDOWS
 	int rc;
 	BOOL bRet;
 
@@ -145,12 +165,10 @@ static int ls_pipe_open_now(LPCWSTR szPipeName, PHANDLE phPipe, unsigned long ms
 	if (!bRet) return -1;
 
 	return ls_try_open_pipe(szPipeName, phPipe);
-#endif
 }
 
 static DWORD CALLBACK ls_pipe_client_wait_thread(LPVOID lpParam)
 {
-#if LS_WINDOWS
 	struct ls_pipe_client_thread *thread = lpParam;
 	int is_error = 0;
 	int rc;
@@ -201,12 +219,10 @@ static DWORD CALLBACK ls_pipe_client_wait_thread(LPVOID lpParam)
 	ls_free(thread);
 
 	return 0;
-#endif
 }
 
 static void LS_CLASS_FN ls_pipe_client_dtor(struct ls_pipe_client_win32 *pipe)
 {
-#if LS_WINDOWS
 	if (pipe->hPipe)
 		CloseHandle(pipe->hPipe);
 
@@ -216,12 +232,10 @@ static void LS_CLASS_FN ls_pipe_client_dtor(struct ls_pipe_client_win32 *pipe)
 		pipe->thread->was_closed = 1;
 		LeaveCriticalSection(&pipe->thread->cs);
 	}
-#endif
 }
 
 static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client_win32 *pipe, unsigned long ms)
 {
-#if LS_WINDOWS
 	DWORD dwResult;
 
 	if (pipe->is_error) return -1;
@@ -235,8 +249,21 @@ static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client_win32 *pipe, un
 		return -1;
 
 	return 1;
-#endif
 }
+#else
+
+static void LS_CLASS_FN ls_pipe_client_dtor(void *ignored)
+{
+    // TODO: implement
+}
+
+static int LS_CLASS_FN ls_pipe_client_wait(void *ignored, unsigned long ms)
+{
+    // TODO: implement
+    return 0;
+}
+
+#endif // LS_WINDOWS
 
 static struct ls_class PipeServerClass = {
 	.type = LS_PIPE,
@@ -468,7 +495,7 @@ unsigned long ls_getpid_self(void)
 #endif
 }
 
-handle_t ls_proc_self(void) { return LS_PROC_SELF; }
+ls_handle ls_proc_self(void) { return LS_PROC_SELF; }
 
 unsigned long ls_proc_parent(unsigned long pid)
 {

@@ -5,6 +5,12 @@
 #include "ls_native.h"
 #include "ls_handle.h"
 
+#include <string.h>
+
+#if LS_DARWIN
+int ls_alert_cocoa(void *parent, const char *title, const char *message, int flags);
+#endif
+
 int ls_dialog_message(void *parent, const char *title, const char *message, int flags)
 {
 #if LS_WINDOWS
@@ -108,6 +114,8 @@ int ls_dialog_message(void *parent, const char *title, const char *message, int 
     }
 
     return 0;
+#elif LS_DARWIN
+    return ls_alert_cocoa(parent, title, message, flags);
 #endif // LS_WINDOWS
 }
 
@@ -134,7 +142,7 @@ static void LS_CLASS_FN open_dialog_results_dtor(struct open_dialog_results *res
 static struct ls_class OpenDialogResultsClass = {
 	.type = LS_FILE_OPEN_DIALOG_RESULTS,
 	.cb = sizeof(struct open_dialog_results),
-	.dtor = &open_dialog_results_dtor,
+	.dtor = (ls_dtor_t)&open_dialog_results_dtor,
 	.wait = NULL
 };
 
@@ -156,7 +164,7 @@ static int add_result(struct open_dialog_results *results, const char *path)
 	return 0;
 }
 
-static size_t filter_array_len( const file_filter_t *filters )
+static size_t filter_array_len(const file_filter_t *filters)
 {
     size_t len = 0;
 

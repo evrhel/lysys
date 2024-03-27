@@ -5,6 +5,8 @@
 
 #if LS_WINDOWS
 #define LS_PATH_SEP '\\'
+#else
+#define LS_PATH_SEP '/'
 #endif
 
 char *ls_strdir(const char *path);

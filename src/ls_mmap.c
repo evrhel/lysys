@@ -13,6 +13,11 @@ static void LS_CLASS_FN ls_mmap_dtor(PHANDLE phMap)
 {
 	CloseHandle(*phMap);
 }
+#else
+static void LS_CLASS_FN ls_mmap_dtor(void *dummy)
+{
+    // TODO: implement
+}
 #endif
 
 static struct ls_class FileMappingClass = {

@@ -4,6 +4,8 @@
 
 #include <lysys/ls_core.h>
 
+#include <string.h>
+
 char *ls_strdir(const char *path)
 {
 	while (*path && *path != '/' && *path != '\\')

@@ -5,24 +5,34 @@
 #include "ls_native.h"
 #include "ls_handle.h"
 
+#if LS_WINDOWS
 static void LS_CLASS_FN ls_event_dtor(PHANDLE phEvent)
 {
-#if LS_WINDOWS
 	CloseHandle(*phEvent);
-#endif
 }
 
 static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent)
 {
-#if LS_WINDOWS
 	DWORD dwResult;
 
 	dwResult = WaitForSingleObject(*phEvent, INFINITE);
 	if (dwResult == WAIT_OBJECT_0) return 0;
 
 	return -1;
-#endif
 }
+#else
+
+static void LS_CLASS_FN ls_event_dtor(void *dummy)
+{
+    // TODO: implement
+}
+
+static void LS_CLASS_FN ls_event_wait(void *dummy)
+{
+    // TODO: implement
+}
+
+#endif // LS_WINDOWS
 
 static struct ls_class EventClass = {
 	.type = LS_EVENT,
