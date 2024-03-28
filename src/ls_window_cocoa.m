@@ -12,18 +12,18 @@ int ls_alert_cocoa(void *parent, const char *title, const char *message, int fla
     
     alert = [[NSAlert alloc] init];
     
-    if (title != NULL)
-    {
-        itext = [NSString stringWithUTF8String:title];
-        [alert setInformativeText:itext];
-        [itext release];
-    }
-    
     if (message != NULL)
     {
-        mtext = [NSString stringWithUTF8String:message];
+        itext = [NSString stringWithUTF8String:message];
+        [alert setInformativeText:itext];
+        // [itext release];
+    }
+    
+    if (title != NULL)
+    {
+        mtext = [NSString stringWithUTF8String:title];
         [alert setMessageText:mtext];
-        [mtext release];
+        // [mtext release];
     }
     
     // set icon
@@ -37,9 +37,8 @@ int ls_alert_cocoa(void *parent, const char *title, const char *message, int fla
         break;
     case LS_DIALOG_QUESTION:
     case LS_DIALOG_INFORMATION:
-        [alert setAlertStyle:NSAlertStyleInformational];
-        break;
     default:
+        [alert setAlertStyle:NSAlertStyleInformational];
         break;
     }
     
@@ -120,7 +119,7 @@ int ls_alert_cocoa(void *parent, const char *title, const char *message, int fla
     }
 }
 
-int ls_dialog_input(void *parent, const char *title, const char *message, char *buffer, size_t size, int flags)
+int ls_dialog_input_cocoa(void *parent, const char *title, const char *message, char *buffer, size_t size, int flags)
 {
     return -1;
 }

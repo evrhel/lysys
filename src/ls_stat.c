@@ -146,7 +146,9 @@ ls_handle ls_opendir(const char *path)
 	data->dir.size = ((uint64_t)data->fd.nFileSizeHigh << 32) | data->fd.nFileSizeLow;
 
 	return data;
-#endif
+#else
+    return NULL;
+#endif // LS_WINDOWS
 }
 
 struct ls_dir *ls_readdir(ls_handle dir)
@@ -178,5 +180,7 @@ struct ls_dir *ls_readdir(ls_handle dir)
 	}
 
 	return &data->dir;
-#endif
+#else
+    return NULL;
+#endif // LS_WINDOWS
 }

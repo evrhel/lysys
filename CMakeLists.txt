@@ -30,6 +30,9 @@ add_library(liblysys STATIC ${LYSYS_SOURCES})
 
 if (WIN32)
     target_link_libraries(liblysys PRIVATE shlwapi)
+elseif(APPLE)
+    find_library(COCOA_LIBRARY Cocoa)
+    target_link_libraries(liblysys PUBLIC ${COCOA_LIBRARY})
 endif()
 
 target_include_directories(liblysys PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
