@@ -26,10 +26,6 @@ void ls_init(const struct ls_allocator *allocator)
 		abort();
 #endif
 
-#if LS_DARWIN
-	ls_init_pasteboard();
-#endif
-
 	if (allocator == NULL)
 	{
 		_allocator = (struct ls_allocator){
@@ -43,21 +39,25 @@ void ls_init(const struct ls_allocator *allocator)
 
 	_exit_hooks = NULL;
 	_num_exit_hooks = 0;
+    
+#if LS_DARWIN
+    ls_init_pasteboard();
+#endif
 
 	ls_set_epoch();
 }
 
 void ls_shutdown(void)
 {
+#if LS_DARWIN
+    ls_deinit_pasteboard();
+#endif
+    
 	ls_free(_exit_hooks);
 	_exit_hooks = NULL;
 	_num_exit_hooks = 0;
 
 	memset(&_allocator, 0, sizeof(_allocator));
-
-#if LS_DARWIN
-	ls_deinit_pasteboard();
-#endif
 }
 
 int ls_add_exit_hook(ls_exit_hook_t hook)

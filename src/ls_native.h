@@ -40,8 +40,11 @@ LPWSTR ls_build_environment(const char *envp[]);
 #endif // LS_WINDOWS
 
 #if LS_POSIX
+#include <unistd.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <sys/stat.h>
 #endif // LS_POSIX
 
 #if LS_DARWIN

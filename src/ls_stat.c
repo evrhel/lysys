@@ -5,6 +5,7 @@
 #include <lysys/ls_file.h>
 
 #include <stdlib.h>
+#include <memory.h>
 
 #include "ls_handle.h"
 #include "ls_native.h"
@@ -88,7 +89,11 @@ struct ls_dir_data
 
 	WIN32_FIND_DATAW fd;
 	HANDLE hFind;
-#endif
+#else
+    struct ls_dir dir;
+    struct dirent dirent;
+    DIR *unidir;
+#endif // LS_WINDOWS
 };
 
 static void LS_CLASS_FN ls_dir_data_dtor(struct ls_dir_data *data)
@@ -96,7 +101,10 @@ static void LS_CLASS_FN ls_dir_data_dtor(struct ls_dir_data *data)
 #if LS_WINDOWS
 	if (data->hFind != INVALID_HANDLE_VALUE)
 		FindClose(data->hFind);
-#endif
+#else
+    if (data->unidir)
+        closedir(data->unidir);
+#endif // LS_WINDOWS
 }
 
 static struct ls_class DirClass = {
@@ -147,7 +155,18 @@ ls_handle ls_opendir(const char *path)
 
 	return data;
 #else
-    return NULL;
+    struct ls_dir_data *data;
+    
+    data = ls_handle_create(&DirClass);
+    
+    data->unidir = opendir(path);
+    if (!data->unidir)
+    {
+        ls_close(data);
+        return NULL;
+    }
+    
+    return data;
 #endif // LS_WINDOWS
 }
 
@@ -181,6 +200,44 @@ struct ls_dir *ls_readdir(ls_handle dir)
 
 	return &data->dir;
 #else
-    return NULL;
+    struct ls_dir_data *data = dir;
+    struct dirent *dirent;
+    struct stat st;
+    int rc;
+    
+    dirent = readdir(data->unidir);
+    if (!dirent)
+        return NULL;
+    
+    memcpy(&data->dirent, dirent, sizeof(struct dirent));
+    
+    data->dir.name = data->dirent.d_name;
+    
+    switch (data->dirent.d_type)
+    {
+    case DT_REG:
+        data->dir.type = LS_FT_FILE;
+        break;
+    case DT_DIR:
+        data->dir.type = LS_FT_DIR;
+        break;
+    case DT_LNK:
+        data->dir.type = LS_FT_LINK;
+        break;
+    case DT_SOCK:
+        data->dir.type = LS_FT_SOCK;
+        break;
+    default:
+        data->dir.type = LS_FT_UNKNOWN;
+        break;
+    }
+    
+    data->dir.size = 0;
+    
+    rc = stat(data->dir.name, &st);
+    if (rc == 0)
+        data->dir.size = st.st_size;
+    
+    return &data->dir;
 #endif // LS_WINDOWS
 }
