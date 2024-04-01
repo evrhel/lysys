@@ -14,6 +14,7 @@
 #define LS_A_READ 1
 #define LS_A_WRITE 2
 #define LS_A_EXECUTE 4
+#define LS_A_EXIST 5
 
 #define LS_A_ASYNC 0x10000
 #define LS_A_RANDOM 0x20000

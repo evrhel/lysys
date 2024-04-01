@@ -10,7 +10,7 @@
 #include "ls_handle.h"
 #include "ls_native.h"
 
-int ls_stat(const char *path, struct ls_stat *stat)
+int ls_stat(const char *path, struct ls_stat *st)
 {
 #if LS_WINDOWS
 	BOOL bRet;
@@ -21,18 +21,29 @@ int ls_stat(const char *path, struct ls_stat *stat)
 	bRet = GetFileAttributesExW(szPath, GetFileExInfoStandard, &fad);	
 	if (!bRet) return -1;
 
-	stat->size = ((uint64_t)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
+	st->size = ((uint64_t)fad.nFileSizeHigh << 32) | fad.nFileSizeLow;
 
-	stat->type = LS_FT_FILE;
+	st->type = LS_FT_FILE;
 	if (fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-		stat->type = LS_FT_DIR;
+		st->type = LS_FT_DIR;
 	else if (fad.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-		stat->type = LS_FT_LINK;
+		st->type = LS_FT_LINK;
 	else if (fad.dwFileAttributes & FILE_ATTRIBUTE_DEVICE)
-		stat->type = LS_FT_DEV;
+		st->type = LS_FT_DEV;
 
 	return 0;
-#endif
+#else
+    struct stat pst;
+    int rc;
+    
+    rc = stat(path, &pst);
+    if (rc == -1)
+        return -1;
+    
+    st->size = pst.st_size;
+    st->ty
+    
+#endif // LS_WINDOWS
 }
 
 int ls_fstat(ls_handle file, struct ls_stat *stat)
@@ -78,7 +89,29 @@ int ls_access(const char *path, int mode)
 	}
 
 	return 0;
-#endif
+#elif
+    int pmode;
+    int rc;
+    
+    switch (mode) {
+    case LS_A_READ:
+        pmode = R_OK;
+        break;
+    case LS_A_WRITE:
+        pmode = W_OK;
+        break;
+    case LS_A_EXECUTE:
+        pmode = X_OK;
+        break;
+    case LS_A_EXIST:
+        pmode = F_OK;
+        break;
+    default:
+        return -1;
+    }
+    
+    return access(path, pmode);
+#endif // LS_WINDOWS
 }
 
 struct ls_dir_data

@@ -16,9 +16,9 @@ struct ls_dir
 	int type;
 };
 
-int ls_stat(const char *path, struct ls_stat *stat);
+int ls_stat(const char *path, struct ls_stat *st);
 
-int ls_fstat(ls_handle file, struct ls_stat *stat);
+int ls_fstat(ls_handle file, struct ls_stat *st);
 
 int ls_access(const char *path, int mode);
 
