@@ -10,6 +10,27 @@
 #include "ls_handle.h"
 #include "ls_native.h"
 
+#if !LS_WINDOWS
+int type_from_unix_flags(int flags)
+{
+    switch (flags & S_IFMT)
+    {
+    case S_IFREG:
+        return LS_FT_FILE;
+    case S_IFDIR:
+        return LS_FT_DIR;
+    case S_IFLNK:
+        return LS_FT_LINK;
+    case S_IFIFO:
+        return LS_FT_PIPE;
+    case S_IFSOCK:
+        return LS_FT_SOCK;
+    default:
+        return LS_FT_UNKNOWN;
+    }
+}
+#endif
+
 int ls_stat(const char *path, struct ls_stat *st)
 {
 #if LS_WINDOWS
@@ -41,12 +62,13 @@ int ls_stat(const char *path, struct ls_stat *st)
         return -1;
     
     st->size = pst.st_size;
-    st->ty
+    st->type = type_from_unix_flags(pst.st_flags);
     
+    return 0;
 #endif // LS_WINDOWS
 }
 
-int ls_fstat(ls_handle file, struct ls_stat *stat)
+int ls_fstat(ls_handle file, struct ls_stat *st)
 {
 #if LS_WINDOWS
 	BOOL bRet;
@@ -66,7 +88,19 @@ int ls_fstat(ls_handle file, struct ls_stat *stat)
 		stat->type = LS_FT_DEV;
 
 	return 0;
-#endif
+#else
+    struct stat pst;
+    int rc;
+    
+    rc = fstat(file, &pst);
+    if (rc == -1)
+        return -1;
+    
+    st->size = pst.st_size;
+    st->type = type_from_unix_flags(pst.st_flags);
+    
+    return 0;
+#endif // LS_WINDOWS
 }
 
 int ls_access(const char *path, int mode)
@@ -89,7 +123,7 @@ int ls_access(const char *path, int mode)
 	}
 
 	return 0;
-#elif
+#else
     int pmode;
     int rc;
     
