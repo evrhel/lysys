@@ -44,6 +44,7 @@ LPWSTR ls_build_environment(const char *envp[]);
 #include <dirent.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #endif // LS_POSIX
@@ -56,6 +57,9 @@ intptr_t ls_register_pasteboard_format(const char *name);
 int ls_set_pasteboard_data(intptr_t fmt, const void *data, size_t cb);
 int ls_clear_pasteboard_data(void);
 size_t ls_get_pasteboard_data(intptr_t fmt, void *data, size_t cb);
+
+int ls_protect_to_flags(int protect);
+int ls_flags_to_protect(int prot);
 
 #endif // LS_DARWIN
 

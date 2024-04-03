@@ -280,3 +280,37 @@ failure:
 }
 
 #endif
+
+#if LS_POSIX
+int ls_protect_to_flags(int protect)
+{
+    int prot = 0;
+    
+    if (protect & LS_PROT_READ)
+        prot |= PROT_READ;
+    
+    if (protect & (LS_PROT_WRITE | LS_PROT_WRITECOPY))
+        prot |= PROT_WRITE;
+    
+    if (protect & LS_PROT_EXEC)
+        prot |= PROT_EXEC;
+    
+    return prot;
+}
+
+int ls_flags_to_protect(int prot)
+{
+    int protect = 0;
+    
+    if (prot & PROT_READ)
+        protect |= LS_PROT_READ;
+    
+    if (prot & PROT_WRITE)
+        protect |= LS_PROT_WRITE;
+    
+    if (prot & PROT_EXEC)
+        protect |= LS_PROT_EXEC;
+    
+    return protect;
+}
+#endif

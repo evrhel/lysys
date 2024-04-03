@@ -8,23 +8,21 @@
 #include "ls_handle.h"
 #include "ls_native.h"
 
+static void LS_CLASS_FN ls_mmap_dtor(void *map)
+{
 #if LS_WINDOWS
-static void LS_CLASS_FN ls_mmap_dtor(PHANDLE phMap)
-{
+    PHANDLE phMap = map;
 	CloseHandle(*phMap);
+#endif // LS_WINDOWS
 }
-#else
-static void LS_CLASS_FN ls_mmap_dtor(void *dummy)
-{
-    // TODO: implement
-}
-#endif
 
 static struct ls_class FileMappingClass = {
 	.type = LS_FILEMAPPING,
 #if LS_WINDOWS
 	.cb = sizeof(HANDLE),
-#endif
+#else
+    .cb = sizeof(size_t),
+#endif // LS_WINDOWS
 	.dtor = (ls_dtor_t)&ls_mmap_dtor,
 	.wait = NULL
 };
@@ -81,7 +79,54 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	*map = handle;
 
 	return lpView;
-#endif
+#else
+    struct stat st;
+    int rc;
+    void *addr;
+    size_t max_size;
+    int prot;
+    int flags = 0;
+    int fd;
+    size_t *map_res;
+    
+    fd = (int)file;
+    
+    if (!map)
+        return NULL;
+    
+    rc = fstat(fd, &st);
+    if (rc != 0)
+        return NULL;
+    
+    if (offset > st.st_size)
+        return NULL;
+    
+    max_size = st.st_size - offset;
+    if (size == 0)
+        size = max_size;
+    else if (size > max_size)
+        return NULL;
+    
+    map_res = ls_handle_create(&FileMappingClass);
+    
+    prot = ls_protect_to_flags(protect);
+    
+    if (protect & LS_PROT_WRITECOPY)
+        flags |= MAP_PRIVATE;
+    else
+        flags |= MAP_SHARED;
+    
+    addr = mmap(NULL, size, protect, flags, fd, NULL);
+    if (!addr)
+    {
+        ls_close(map_res);
+        return NULL;
+    }
+    
+    *map_res = size;
+    
+    return addr;
+#endif // LS_WINDOWS
 }
 
 int ls_munmap(ls_handle map, void *addr)
@@ -90,5 +135,10 @@ int ls_munmap(ls_handle map, void *addr)
 	UnmapViewOfFile(addr);
 	ls_close(map);
 	return 0;
-#endif
+#else
+    if (munmap(addr, *(size_t *)map) != 0)
+        return -1;
+    ls_close(map);
+    return 0;
+#endif // LS_WINDOWS
 }
