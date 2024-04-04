@@ -11,8 +11,8 @@
 struct ls_watch_event
 {
 	int action;			//!< Action
-	const char *source;	//!< Source path
-	const char *target;	//!< Target path (if action is rename, otherwise NULL)
+	const char *target;	//!< Target path
+	const char *source;	//!< Source path (if action is rename, otherwise NULL)
 };
 
 ls_handle ls_watch_dir(const char *dir, int recursive);

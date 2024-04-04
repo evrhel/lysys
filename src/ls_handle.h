@@ -40,8 +40,8 @@ struct ls_class
 //! \brief Handle information.
 struct ls_handle_info
 {
-	struct ls_class *clazz;	//!< Class of the handle
-	uint8_t data[0];		//!< Data of the handle
+	const struct ls_class *clazz;	//!< Class of the handle
+	uint8_t data[0];				//!< Data of the handle
 };
 
 ls_handle ls_handle_alloc(struct ls_class *clazz);
@@ -57,7 +57,7 @@ ls_handle ls_handle_init(ls_handle h);
 //! 
 //! \return The new handle. This is a pointer to the handle data. The
 //! data will be initialized to zero.
-ls_handle ls_handle_create(struct ls_class *clazz);
+ls_handle ls_handle_create(const struct ls_class *clazz);
 
 //! \brief Deallocate memory used by the handle.
 //!

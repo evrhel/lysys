@@ -15,7 +15,7 @@ ls_handle ls_handle_alloc(struct ls_class *clazz)
     return hi->data;
 }
 
-ls_handle ls_handle_create(struct ls_class *clazz)
+ls_handle ls_handle_create(const struct ls_class *clazz)
 {
 	struct ls_handle_info *hi;
 	
