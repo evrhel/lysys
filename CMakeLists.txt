@@ -20,10 +20,10 @@ set(LYSYS_SOURCES
     ${src}/ls_sync.c
     ${src}/ls_thread.c
     ${src}/ls_time.c
-    ${src}/ls_window.c)
+    ${src}/ls_watch.c)
 
 if(APPLE)
-    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m ${src}/ls_window_cocoa.m)
+    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m)
 endif()
 
 add_library(liblysys STATIC ${LYSYS_SOURCES})

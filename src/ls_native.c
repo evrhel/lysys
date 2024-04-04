@@ -11,9 +11,9 @@
 
 #ifdef LS_WINDOWS
 
-int ls_utf8_to_wchar_buf(const char *utf8, LPWSTR buf, int cbbuf)
+int ls_utf8_to_wchar_buf(const char *utf8, LPWSTR buf, int cchbuf)
 {
-	return MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf, cbbuf);
+	return MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf, cchbuf);
 }
 
 LPWSTR ls_utf8_to_wchar(const char *utf8)

@@ -17,7 +17,7 @@
 
 // utf8 string to wchar_t string
 // returns number of characters written to buf, including null terminator
-int ls_utf8_to_wchar_buf(const char *utf8, LPWSTR buf, int cbbuf);
+int ls_utf8_to_wchar_buf(const char *utf8, LPWSTR buf, int cchbuf);
 
 LPWSTR ls_utf8_to_wchar(const char *utf8);
 
