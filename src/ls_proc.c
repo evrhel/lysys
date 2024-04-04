@@ -27,6 +27,10 @@ struct ls_proc
 #else
     pid_t pid;
     int status;
+    
+    char *path;
+    char *name;
+    size_t path_len;
 #endif // LS_WINDOWS
 };
 
@@ -58,6 +62,9 @@ static void LS_CLASS_FN ls_proc_dtor(struct ls_proc *proc)
     pthread_t pt;
     intptr_t ipid;
     pid_t pid;
+    
+    if (proc->path)
+        free(proc->path);
     
     pid = waitpid(proc->pid, NULL, WNOHANG);
     if (pid == 0)
@@ -133,16 +140,21 @@ static struct ls_class ProcClass = {
 	.wait = (ls_wait_t)&ls_proc_wait
 };
 
-#if LS_WINDOWS
 
-struct ls_pipe_server_win32
+struct ls_pipe_server
 {
+#if LS_WINDOWS
 	HANDLE hPipe;
 	OVERLAPPED ov;
 
 	WCHAR szPipeName[LS_PIPE_NAME_SIZE];
+#else
+    int fd;
+    char name[LS_PIPE_NAME_SIZE];
+#endif // LS_WINDOWS
 };
 
+#if LS_WINDOWS
 struct ls_pipe_client_thread
 {
 	HANDLE hThread;
@@ -154,26 +166,41 @@ struct ls_pipe_client_thread
 	int *is_error;
 	PHANDLE phPipe;
 };
+#endif
 
-struct ls_pipe_client_win32
+struct ls_pipe_client
 {
+#if LS_WINDOWS
 	HANDLE hPipe;
 	struct ls_pipe_client_thread *thread;
 	int is_error;
 	WCHAR szPipeName[LS_PIPE_NAME_SIZE];
+#else
+    int fd;
+    char name[LS_PIPE_NAME_SIZE];
+#endif // LS_WINDOWS
 };
 
-static void LS_CLASS_FN ls_pipe_server_dtor(struct ls_pipe_server_win32 *pipe)
+static void LS_CLASS_FN ls_pipe_server_dtor(struct ls_pipe_server *pipe)
 {
+#if LS_WINDOWS
 	if (pipe->hPipe)
 		CloseHandle(pipe->hPipe);
 
 	if (pipe->ov.hEvent)
 		CloseHandle(pipe->ov.hEvent);
+#else
+    if (pipe->fd)
+    {
+        close(pipe->fd);
+        unlink(pipe->name);
+    }
+#endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_pipe_server_wait(struct ls_pipe_server_win32 *pipe, unsigned long ms)
+static int LS_CLASS_FN ls_pipe_server_wait(struct ls_pipe_server *pipe, unsigned long ms)
 {
+#if LS_WINDOWS
 	DWORD dwResult;
 
 	if (!pipe->hPipe) return 0;
@@ -182,22 +209,10 @@ static int LS_CLASS_FN ls_pipe_server_wait(struct ls_pipe_server_win32 *pipe, un
 	if (dwResult == WAIT_OBJECT_0)
 		return 0;
 	return -1;
-}
-
 #else
-
-static void LS_CLASS_FN ls_pipe_server_dtor(void *ignored)
-{
-    // TODO: implement
-}
-
-static int LS_CLASS_FN ls_pipe_server_wait(void *ignored, unsigned long ms)
-{
-    // TODO: implement
     return 0;
-}
-
 #endif // LS_WINDOWS
+}
 
 #if LS_WINDOWS
 
@@ -284,8 +299,11 @@ static DWORD CALLBACK ls_pipe_client_wait_thread(LPVOID lpParam)
 	return 0;
 }
 
-static void LS_CLASS_FN ls_pipe_client_dtor(struct ls_pipe_client_win32 *pipe)
+#endif // LS_WINDOWS
+
+static void LS_CLASS_FN ls_pipe_client_dtor(struct ls_pipe_client *pipe)
 {
+#if LS_WINDOWS
 	if (pipe->hPipe)
 		CloseHandle(pipe->hPipe);
 
@@ -295,10 +313,15 @@ static void LS_CLASS_FN ls_pipe_client_dtor(struct ls_pipe_client_win32 *pipe)
 		pipe->thread->was_closed = 1;
 		LeaveCriticalSection(&pipe->thread->cs);
 	}
+#else
+    if (pipe->fd)
+        close(pipe->fd);
+#endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client_win32 *pipe, unsigned long ms)
+static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client *pipe, unsigned long ms)
 {
+#if LS_WINDOWS
 	DWORD dwResult;
 
 	if (pipe->is_error) return -1;
@@ -312,36 +335,21 @@ static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client_win32 *pipe, un
 		return -1;
 
 	return 1;
-}
 #else
-
-static void LS_CLASS_FN ls_pipe_client_dtor(void *ignored)
-{
-    // TODO: implement
-}
-
-static int LS_CLASS_FN ls_pipe_client_wait(void *ignored, unsigned long ms)
-{
-    // TODO: implement
     return 0;
-}
-
 #endif // LS_WINDOWS
+}
 
 static struct ls_class PipeServerClass = {
 	.type = LS_PIPE,
-#if LS_WINDOWS
-	.cb = sizeof(struct ls_pipe_server_win32),
-#endif
+	.cb = sizeof(struct ls_pipe_server),
 	.dtor = (ls_dtor_t)&ls_pipe_server_dtor,
 	.wait = (ls_wait_t)&ls_pipe_server_wait
 };
 
 static struct ls_class PipeClientClass = {
 	.type = LS_PIPE,
-#if LS_WINDOWS
-	.cb = sizeof(struct ls_pipe_client_win32),
-#endif
+	.cb = sizeof(struct ls_pipe_client),
 	.dtor = (ls_dtor_t)&ls_pipe_client_dtor,
 	.wait = (ls_wait_t)&ls_pipe_client_wait
 };
@@ -442,13 +450,28 @@ ls_handle ls_spawn(const char *path, const char *argv[], const char *envp[], con
     if (!proc)
         return NULL;
     
+    proc->path = realpath(path, NULL);
+    if (!proc->path)
+    {
+        ls_close(proc);
+        return NULL;
+    }
+    
+    proc->path_len = strlen(proc->path);
+    
+    proc->name = strrchr(proc->path, '/');
+    if (!proc->name)
+        proc->name = proc->path;
+    else
+        proc->name++;
+    
     rc = pipe(pipefd);
     if (rc == -1)
     {
         ls_close(proc);
         return NULL;
     }
-    
+
     pid = fork();
     if (pid == -1)
     {
@@ -540,7 +563,7 @@ ls_handle ls_spawn(const char *path, const char *argv[], const char *envp[], con
             nenvp[len] = NULL;
         }
         
-        execve(path, nargv, nenvp);
+        execve(proc->path, nargv, nenvp);
         
         perror(path);
         write(pipefd[1], buf, 1);
@@ -624,7 +647,61 @@ ls_handle ls_proc_open(unsigned long pid)
 
 	return ph;
 #else
-    return NULL;
+    struct ls_proc *proc;
+    struct stat st;
+    char filename[64];
+    int fd;
+    int rc;
+    ssize_t n;
+    
+    proc = ls_handle_create(&ProcClass);
+    if (!proc)
+        return NULL;
+    
+    snprintf(filename, sizeof(filename), "/proc/%lu/exe", pid);
+    
+    rc = stat(filename, &st);
+    if (rc == -1)
+    {
+        ls_close(proc);
+        return NULL;
+    }
+    
+    proc->path_len = st.st_size;
+    proc->path = malloc(proc->path_len + 1);
+    if (!proc->path)
+    {
+        ls_close(proc);
+        return NULL;
+    }
+    
+    fd = open(filename, O_RDONLY);
+    if (fd == -1)
+    {
+        ls_close(proc);
+        return NULL;
+    }
+    
+    n = read(fd, proc->path, proc->path_len);
+    if (n == -1)
+    {
+        ls_close(proc);
+        return NULL;
+    }
+    
+    proc->path[n] = 0;
+    
+    close(fd);
+    
+    proc->name = strrchr(proc->path, '/');
+    if (!proc->name)
+        proc->name = proc->path;
+    else
+        proc->name++;
+    
+    proc->pid = (pid_t)pid;
+    
+    return proc;
 #endif // LS_WINDOWS
 }
 
@@ -655,6 +732,8 @@ int ls_proc_state(ls_handle ph)
 
 	return LS_PROC_TERMINATED;
 #else
+    
+    
     return -1;
 #endif // LS_WINDOWS
 }
@@ -688,8 +767,7 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 
 size_t ls_proc_path(ls_handle ph, char *path, size_t size)
 {
-#if LS_WINDOWS
-	struct ls_proc_win32 *proc = (struct ls_proc_win32 *)ph;
+	struct ls_proc *proc = (struct ls_proc *)ph;
 
 	if (size == 0)
 		return proc->path_len;
@@ -699,15 +777,11 @@ size_t ls_proc_path(ls_handle ph, char *path, size_t size)
 
 	memcpy(path, proc->path, size);
 	return size;
-#else
-    return 0;
-#endif // LS_WINDOWS
 }
 
 size_t ls_proc_name(ls_handle ph, char *name, size_t size)
 {
-#if LS_WINDOWS
-	struct ls_proc_win32 *proc = (struct ls_proc_win32 *)ph;
+	struct ls_proc *proc = (struct ls_proc *)ph;
 	size_t len = proc->path_len - (proc->name - proc->path);
 
 	if (size == 0)
@@ -718,16 +792,13 @@ size_t ls_proc_name(ls_handle ph, char *name, size_t size)
 
 	memcpy(name, proc->name, size);
 	return size;
-#else
-    return 0;
-#endif // LS_WINDOWS
 }
 
 unsigned long ls_getpid(ls_handle ph)
 {
 #if LS_WINDOWS
 	if (ph == LS_PROC_SELF) return GetCurrentProcessId();
-	return ((struct ls_proc_win32 *)ph)->pi.dwProcessId;
+	return ((struct ls_proc *)ph)->pi.dwProcessId;
 #else
     struct ls_proc *proc = ph;
     if (ph == LS_PROC_SELF) return getpid();
@@ -816,7 +887,34 @@ ls_handle ls_pipe_create(const char *name)
 
 	return ph;
 #else
-    return NULL;
+    struct ls_pipe_server *ph;
+    int rc;
+    int fd;
+    
+    ph = ls_handle_create(&PipeServerClass);
+    if (!ph)
+        return NULL;
+    
+    snprintf(ph->name, LS_PIPE_NAME_SIZE, "/tmp/%s", name);
+    
+    rc = mkfifo(ph->name, 0);
+    if (rc == -1)
+    {
+        ls_close(ph);
+        return NULL;
+    }
+    
+    fd = open(ph->name, O_RDWR);
+    if (fd == -1)
+    {
+        unlink(ph->name);
+        ls_close(ph);
+        return NULL;
+    }
+    
+    ph->fd = fd;
+    
+    return ph;
 #endif
 }
 
@@ -870,6 +968,25 @@ ls_handle ls_pipe_open(const char *name, unsigned long ms)
 
 	return ph;
 #else
-    return NULL;
+    struct ls_pipe_client *ph;
+    int rc;
+    int fd;
+    
+    ph = ls_handle_create(&PipeClientClass);
+    if (!ph)
+        return NULL;
+
+    snprintf(ph->name, LS_PIPE_NAME_SIZE, "/tmp/%s", name);
+    
+    fd = open(ph->name, O_RDWR);
+    if (fd == -1)
+    {
+        ls_close(ph);
+        return NULL;
+    }
+    
+    ph->fd = fd;
+    
+    return ph;
 #endif
 }
