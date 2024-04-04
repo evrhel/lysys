@@ -382,7 +382,7 @@ static int ls_image_name(HANDLE hProcess, char *out, size_t size, char **name)
 
 static ls_handle ls_spawn_imp(LPWSTR cmd, LPWSTR env, LPCWSTR dir, int flags)
 {
-	struct ls_proc_win32 *ph;
+	struct ls_proc *ph;
 	BOOL bRet;
 	DWORD dwFlags = 0;
 
@@ -627,7 +627,7 @@ ls_handle ls_spawn_shell(const char *cmd, const char *envp[], const char *cwd, i
 ls_handle ls_proc_open(unsigned long pid)
 {
 #if LS_WINDOWS
-	struct ls_proc_win32 *ph;
+	struct ls_proc *ph;
 	HANDLE hProcess;
 
 	hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid);
@@ -709,7 +709,7 @@ void ls_kill(ls_handle ph, int signum)
 {
 #if LS_WINDOWS
 	if (ph == LS_PROC_SELF) ExitProcess(signum);
-	TerminateProcess(((struct ls_proc_win32 *)ph)->pi.hProcess, signum);
+	TerminateProcess(((struct ls_proc *)ph)->pi.hProcess, signum);
 #else
     struct ls_proc *proc = ph;
     if (ph == LS_PROC_SELF) raise(SIGTERM);
@@ -724,7 +724,7 @@ int ls_proc_state(ls_handle ph)
 
 	if (ph == LS_PROC_SELF) return LS_PROC_RUNNING;
 
-	if (!GetExitCodeProcess(((struct ls_proc_win32 *)ph)->pi.hProcess, &dwExitCode))
+	if (!GetExitCodeProcess(((struct ls_proc *)ph)->pi.hProcess, &dwExitCode))
 		return -1;
 
 	if (dwExitCode == STILL_ACTIVE)
@@ -745,7 +745,7 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 
 	if (ph == LS_PROC_SELF) return 1;
 
-	if (!GetExitCodeProcess(((struct ls_proc_win32 *)ph)->pi.hProcess, &dwExitCode))
+	if (!GetExitCodeProcess(((struct ls_proc *)ph)->pi.hProcess, &dwExitCode))
 		return -1;
 
 	if (dwExitCode == STILL_ACTIVE)
@@ -850,7 +850,7 @@ done:
 ls_handle ls_pipe_create(const char *name)
 {
 #if LS_WINDOWS
-	struct ls_pipe_server_win32 *ph;
+	struct ls_pipe_server *ph;
 	BOOL bRet;
 	DWORD dwError;
 
@@ -921,7 +921,7 @@ ls_handle ls_pipe_create(const char *name)
 ls_handle ls_pipe_open(const char *name, unsigned long ms)
 {
 #if LS_WINDOWS
-	struct ls_pipe_client_win32 *ph;
+	struct ls_pipe_client *ph;
 	struct ls_pipe_client_thread *thread;
 	int rc;
 

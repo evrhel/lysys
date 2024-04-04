@@ -77,15 +77,15 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	bRet = GetFileInformationByHandle(file, &fi);
 	if (!bRet) return -1;
 
-	stat->size = ((uint64_t)fi.nFileSizeHigh << 32) | fi.nFileSizeLow;
+	st->size = ((uint64_t)fi.nFileSizeHigh << 32) | fi.nFileSizeLow;
 
-	stat->type = LS_FT_FILE;
+	st->type = LS_FT_FILE;
 	if (fi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-		stat->type = LS_FT_DIR;
+		st->type = LS_FT_DIR;
 	else if (fi.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
-		stat->type = LS_FT_LINK;
+		st->type = LS_FT_LINK;
 	else if (fi.dwFileAttributes & FILE_ATTRIBUTE_DEVICE)
-		stat->type = LS_FT_DEV;
+		st->type = LS_FT_DEV;
 
 	return 0;
 #else

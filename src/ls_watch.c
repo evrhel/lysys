@@ -84,7 +84,7 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 #endif // LS_WINDOWS
 }
 
-static const struct ls_class WatchClass = {
+static struct ls_class WatchClass = {
 	.type = LS_WATCH,
 	.cb = sizeof(struct ls_watch),
 	.dtor = (ls_dtor_t)&ls_watch_dtor,
@@ -153,20 +153,6 @@ int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
 {
 #if LS_WINDOWS
 	struct ls_watch *w = watch;
-	BOOL b;
-	DWORD dwBytes;
-	DWORD dwErr;
-
-	b = GetOverlappedResult(w->hDirectory, &w->ol, &dwBytes, FALSE);
-	if (!b)
-	{
-		dwErr = GetLastError();
-		if (dwErr == ERROR_IO_INCOMPLETE)
-			return 1;
-		return -1;
-	}
-
-	ResetEvent(w->ol.hEvent);
 
 	switch (w->u.fnei.Action)
 	{
@@ -183,19 +169,6 @@ int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
 	default:
 		break;
 	}
-
-	b = ReadDirectoryChangesExW(
-		w->hDirectory,
-		w->u.buf,
-		NOTIF_BUFSIZE,
-		w->recursive,
-		NOTIF_ALL,
-		NULL,
-		&w->ol,
-		NULL,
-		ReadDirectoryNotifyExtendedInformation);
-	if (!b)
-		w->was_error = 1; // could not reissue read
 
 	return 0;
 #else
