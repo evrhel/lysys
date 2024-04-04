@@ -24,7 +24,7 @@ void ls_init(const struct ls_allocator *allocator)
 	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 	if (!SUCCEEDED(hr))
 		abort();
-#endif
+#endif // LS_WINDOWS
 
 	if (allocator == NULL)
 	{
@@ -42,7 +42,7 @@ void ls_init(const struct ls_allocator *allocator)
     
 #if LS_DARWIN
     ls_init_pasteboard();
-#endif
+#endif // LS_DARWIN
 
 	ls_set_epoch();
 }
@@ -51,7 +51,7 @@ void ls_shutdown(void)
 {
 #if LS_DARWIN
     ls_deinit_pasteboard();
-#endif
+#endif // LS_DARWIN
     
 	ls_free(_exit_hooks);
 	_exit_hooks = NULL;

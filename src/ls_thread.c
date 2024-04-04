@@ -9,7 +9,7 @@ struct ls_thread
 {
 #if LS_WINDOWS
 	HANDLE hThread;
-#endif
+#endif // LS_WINDOWS
 
 	ls_thread_func_t func;
 	void *up;
@@ -20,7 +20,7 @@ static void LS_CLASS_FN ls_thread_dtor(struct ls_thread *th)
 #if LS_WINDOWS
 	if (th->hThread)
 		CloseHandle(th->hThread);
-#endif
+#endif // LS_WINDOWS
 }
 
 static int LS_CLASS_FN ls_thread_wait(struct ls_thread *th)
@@ -40,7 +40,9 @@ static int LS_CLASS_FN ls_thread_wait(struct ls_thread *th)
 	}
 	
 	return -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 #if LS_WINDOWS
@@ -49,7 +51,7 @@ static DWORD CALLBACK ls_thread_startup(struct ls_thread *th)
 	th->func(th->up);
 	return 0;
 }
-#endif
+#endif // LS_WINDOWS
 
 static struct ls_class ThreadClass = {
 	.type = LS_THREAD,
@@ -77,7 +79,9 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 	}
 
 	return th;
-#endif
+#else
+	return NULL;
+#endif // LS_WINDOWS
 }
 
 unsigned long ls_thread_id(ls_handle th)
@@ -85,14 +89,18 @@ unsigned long ls_thread_id(ls_handle th)
 #if LS_WINDOWS
 	struct ls_thread *t = *(struct ls_thread **)th;
 	return GetThreadId(t->hThread);
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 unsigned long ls_thread_self(void)
 {
 #if LS_WINDOWS
 	return GetCurrentThreadId();
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 int ls_is_active_thread_id(unsigned long id)
@@ -107,12 +115,15 @@ int ls_is_active_thread_id(unsigned long id)
 	}
 
 	return 0;
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 void ls_yield(void)
 {
 #if LS_WINDOWS
 	SwitchToThread();
-#endif
+#else
+#endif // LS_WINDOWS
 }

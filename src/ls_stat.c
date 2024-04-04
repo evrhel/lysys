@@ -10,7 +10,7 @@
 #include "ls_handle.h"
 #include "ls_native.h"
 
-#if !LS_WINDOWS
+#if LS_POSIX
 int type_from_unix_flags(int flags)
 {
     switch (flags & S_IFMT)
@@ -29,7 +29,7 @@ int type_from_unix_flags(int flags)
         return LS_FT_UNKNOWN;
     }
 }
-#endif
+#endif // LS_POSIX
 
 int ls_stat(const char *path, struct ls_stat *st)
 {

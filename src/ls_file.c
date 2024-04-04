@@ -10,19 +10,27 @@
 #include "ls_handle.h"
 #include "ls_native.h"
 
-#if LS_WINDOWS
-static void LS_CLASS_FN file_dtor(PHANDLE phFile)
+static void LS_CLASS_FN file_dtor(void *param)
 {
+#if LS_WINDOWS
+	LPHANDLE phFile = param;
 	CloseHandle(*phFile);
+#else
+	int *pfd = param;
+	close(*pfd);
+#endif // LS_WINDOWS
 }
 
 static struct ls_class FileClass = {
 	.type = LS_FILE,
+#if LS_WINDOWS
 	.cb = sizeof(HANDLE),
+#else
+	.cb = sizeof(int),
+#endif // LS_WINDOWS
 	.dtor = &file_dtor,
 	.wait = NULL
 };
-#endif
 
 ls_handle ls_open(const char *path, int access, int share, int create)
 {
@@ -51,7 +59,9 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 	*(PHANDLE)file = hFile;
 
 	return file;
-#endif
+#else
+	return NULL;
+#endif // LS_WINDOWS
 }
 
 int64_t ls_seek(ls_handle file, int64_t offset, int origin)
@@ -67,7 +77,9 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 		return -1;
 
 	return liNewPointer.QuadPart;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 size_t ls_read(ls_handle file, void *buffer, size_t size,
@@ -118,7 +130,9 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 	}
 
 	return size - remaining;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 size_t ls_write(ls_handle file, const void *buffer, size_t size,
@@ -166,13 +180,17 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 	}
 
 	return size - remaining;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_flush(ls_handle file)
 {
 #if LS_WINDOWS
 	return FlushFileBuffers(*(PHANDLE)file) ? 0 : -1;
+#else
+	return -1;
 #endif
 }
 
@@ -203,7 +221,9 @@ int ls_get_async_io_result(ls_handle file, struct ls_async_io *async,
 	async->transferred = dwRet;
 
 	return (int)async->status;
-#endif
+#else
+	return LS_IO_ERROR;
+#endif // LS_WINDOWS
 }
 
 int ls_cancel_async_io(ls_handle file, struct ls_async_io *async)
@@ -212,7 +232,9 @@ int ls_cancel_async_io(ls_handle file, struct ls_async_io *async)
 	HANDLE hFile = *(PHANDLE)file;
 	LPOVERLAPPED lpOl = async ? (LPOVERLAPPED)async->reserved : NULL;
 	return CancelIoEx(hFile, lpOl) ? 0 : -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_move(const char *old_path, const char *new_path)
@@ -237,7 +259,9 @@ int ls_move(const char *old_path, const char *new_path)
 	ls_free(lpOld);
 
 	return rc ? 0 : -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_copy(const char *old_path, const char *new_path)
@@ -262,7 +286,9 @@ int ls_copy(const char *old_path, const char *new_path)
 	ls_free(lpOld);
 
 	return rc ? 0 : -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_delete(const char *path)
@@ -279,7 +305,9 @@ int ls_delete(const char *path)
 	ls_free(lpPath);
 
 	return rc ? 0 : -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_createfile(const char *path, size_t size)
@@ -318,7 +346,9 @@ int ls_createfile(const char *path, size_t size)
 
 	CloseHandle(hFile);
 	return 0;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_createdir(const char *path)
@@ -335,7 +365,9 @@ int ls_createdir(const char *path)
 	ls_free(lpPath);
 
 	return rc ? 0 : -1;
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_createdirs(const char *path)

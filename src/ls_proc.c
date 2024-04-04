@@ -47,7 +47,7 @@ static void *wait_handler(void *param)
     return NULL;
 }
 
-#endif
+#endif // LS_POSIX
 
 static void LS_CLASS_FN ls_proc_dtor(struct ls_proc *proc)
 {
@@ -166,7 +166,7 @@ struct ls_pipe_client_thread
 	int *is_error;
 	PHANDLE phPipe;
 };
-#endif
+#endif // LS_WINDOWS
 
 struct ls_pipe_client
 {
@@ -915,7 +915,7 @@ ls_handle ls_pipe_create(const char *name)
     ph->fd = fd;
     
     return ph;
-#endif
+#endif // LS_WINDOWS
 }
 
 ls_handle ls_pipe_open(const char *name, unsigned long ms)
@@ -988,5 +988,5 @@ ls_handle ls_pipe_open(const char *name, unsigned long ms)
     ph->fd = fd;
     
     return ph;
-#endif
+#endif // LS_WINDOWS
 }

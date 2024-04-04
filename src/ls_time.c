@@ -6,14 +6,14 @@
 #if LS_WINDOWS
 static LARGE_INTEGER _li_freq;
 static LARGE_INTEGER _li_start;
-#endif
+#endif // LS_WINDOWS
 
 void ls_set_epoch(void)
 {
 #if LS_WINDOWS
 	QueryPerformanceFrequency(&_li_freq);
 	QueryPerformanceCounter(&_li_start);
-#endif
+#endif // LS_WINDOWS
 }
 
 long long ls_nano_time(void)
@@ -22,7 +22,9 @@ long long ls_nano_time(void)
 	LARGE_INTEGER li;
 	QueryPerformanceCounter(&li);
 	return (li.QuadPart - _li_start.QuadPart) * 1000000000LL / _li_freq.QuadPart;
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 double ls_time64(void)
@@ -31,7 +33,9 @@ double ls_time64(void)
 	LARGE_INTEGER li;
 	QueryPerformanceCounter(&li);
 	return (double)(li.QuadPart - _li_start.QuadPart) / _li_freq.QuadPart;
-#endif
+#else
+	return 0.0;
+#endif // LS_WINDOWS
 }
 
 float ls_time(void) { return (float)ls_time64(); }
@@ -49,7 +53,8 @@ void ls_get_time(struct ls_timespec *ts)
 	ts->minute = st.wMinute;
 	ts->second = st.wSecond;
 	ts->millisecond = st.wMilliseconds;
-#endif
+#else
+#endif // LS_WINDOWS
 }
 
 void ls_get_local_time(struct ls_timespec *ts)
@@ -65,14 +70,16 @@ void ls_get_local_time(struct ls_timespec *ts)
 	ts->minute = st.wMinute;
 	ts->second = st.wSecond;
 	ts->millisecond = st.wMilliseconds;
-#endif
+#else
+#endif // LS_WINDOWS
 }
 
 void ls_sleep(unsigned long ms)
 {
 #if LS_WINDOWS
 	Sleep(ms);
-#endif
+#else
+#endif // LS_WINDOWS
 }
 
 void ls_nanosleep(long long ns)
@@ -95,5 +102,6 @@ void ls_nanosleep(long long ns)
 
 	while (li_now.QuadPart < i64_end)
 		QueryPerformanceCounter(&li_now);
-#endif
+#else
+#endif // LS_WINDOWS
 }

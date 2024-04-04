@@ -11,12 +11,13 @@ static void LS_CLASS_FN ls_event_dtor(PHANDLE phEvent)
 	CloseHandle(*phEvent);
 }
 
-static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent)
+static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent, unsigned long ms)
 {
 	DWORD dwResult;
 
-	dwResult = WaitForSingleObject(*phEvent, INFINITE);
+	dwResult = WaitForSingleObject(*phEvent, ms);
 	if (dwResult == WAIT_OBJECT_0) return 0;
+    if (dwResult == WAIT_TIMEOUT) return 1;
 
 	return -1;
 }

@@ -79,7 +79,9 @@ size_t ls_getenv_buf(const char *name, char *buf, size_t size)
 	ls_free(lpName);
 
 	return r - 1; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 char *ls_getenv(const char *name)
@@ -114,7 +116,9 @@ char *ls_getenv(const char *name)
 	ls_free(lpName);
 
 	return ret;
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 size_t ls_expand_env(const char *src, char *dst, size_t size)
@@ -149,7 +153,9 @@ size_t ls_expand_env(const char *src, char *dst, size_t size)
 	ls_free(lpSrc);
 
 	return r - 1; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 size_t ls_which(const char *path, char *buf, size_t size)
@@ -184,7 +190,9 @@ size_t ls_which(const char *path, char *buf, size_t size)
 	ls_free(lpPath);
 
 	return r - 1; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 size_t ls_abspath(const char *path, char *buf, size_t size)
@@ -199,7 +207,9 @@ size_t ls_abspath(const char *path, char *buf, size_t size)
 	ls_wchar_to_utf8_buf(szBuf, buf, (int)size);
 
 	return stLen - 1; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 size_t ls_relpath(const char *path, const char *base, char *buf, size_t size)
@@ -218,7 +228,9 @@ size_t ls_relpath(const char *path, const char *base, char *buf, size_t size)
 	if (!r) return 0;
 
 	return ls_wchar_to_utf8_buf(szBuf, buf, (int)size) - 1ULL; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }
 
 size_t ls_realpath(const char *path, char *buf, size_t size)
@@ -239,5 +251,7 @@ size_t ls_realpath(const char *path, char *buf, size_t size)
 	if (!r) return 0;
 
 	return ls_wchar_to_utf8_buf(szPath, buf, (int)size) - 1ULL; // Exclude the null terminator
-#endif
+#else
+	return 0;
+#endif // LS_WINDOWS
 }

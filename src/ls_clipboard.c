@@ -24,7 +24,9 @@ intptr_t ls_register_clipboard_format(const char *name)
 	return (intptr_t)id;
 #elif LS_DARWIN
 	return ls_register_pasteboard_format(name);
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 int ls_set_clipboard_data(intptr_t fmt, const void *data, size_t cb)
@@ -70,6 +72,8 @@ int ls_set_clipboard_data(intptr_t fmt, const void *data, size_t cb)
 	return 0;
 #elif LS_DARWIN
 	return ls_set_pasteboard_data(fmt, data, cb);
+#else
+	return -1;
 #endif
 }
 
@@ -95,7 +99,9 @@ int ls_clear_clipboard_data(void)
 	return 0;
 #elif LS_DARWIN
 	return ls_clear_pasteboard_data();
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }
 
 size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb)
@@ -143,5 +149,7 @@ size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb)
 	return stSize;
 #elif LS_DARWIN
 	return ls_get_pasteboard_data(fmt, data, cb);
-#endif
+#else
+	return -1;
+#endif // LS_WINDOWS
 }

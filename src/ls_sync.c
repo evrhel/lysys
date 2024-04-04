@@ -9,10 +9,10 @@ static struct ls_class LockClass = {
 #if LS_WINDOWS
 	.cb = sizeof(CRITICAL_SECTION),
 	.dtor = (ls_dtor_t)&DeleteCriticalSection,
-#elif LS_POSIX
+#else
     .cb = sizeof(pthread_mutex_t),
     .dtor = (ls_dtor_t)&pthread_mutex_destroy,
-#endif
+#endif // LS_WINDOWS
 	.wait = NULL
 };
 
@@ -21,10 +21,10 @@ static struct ls_class ConditionClass = {
 #if LS_WINDOWS
 	.cb = sizeof(CONDITION_VARIABLE),
 	.dtor = NULL,
-#elif LS_POSIX
+#else
     .cb = sizeof(pthread_cond_t),
     .dtor = (ls_dtor_t)&pthread_cond_destroy,
-#endif
+#endif // LS_WINDOWS
 	.wait = NULL
 };
 
@@ -36,7 +36,7 @@ ls_handle ls_lock_create(void)
 	if (!lpCS) return NULL;
 	InitializeCriticalSection(lpCS);
 	return lpCS;
-#elif LS_POSIX
+#else
     pthread_mutex_t *mutex;
     int rc;
     
@@ -50,36 +50,34 @@ ls_handle ls_lock_create(void)
     }
     
     return mutex;
-#else
-    return NULL;
-#endif
+#endif // LS_WINDOWS
 }
 
 void ls_lock(ls_handle lock)
 {
 #if LS_WINDOWS
-	EnterCriticalSection(lock);
-#elif LS_POSIX
+    EnterCriticalSection(lock);
+#else
     pthread_mutex_lock(lock);
-#endif
+#endif // LS_WINDOWS
 }
 
 int ls_trylock(ls_handle lock)
 {
 #if LS_WINDOWS
 	return TryEnterCriticalSection(lock);
-#elif LS_POSIX
+#else
     return !!pthread_mutex_trylock(lock);
-#endif
+#endif // LS_WINDOWS
 }
 
 void ls_unlock(ls_handle lock)
 {
 #if LS_WINDOWS
 	LeaveCriticalSection(lock);
-#elif LS_POSIX
+#else
     pthread_mutex_unlock(lock);
-#endif
+#endif // LS_WINDOWS
 }
 
 ls_handle ls_cond_create(void)
@@ -91,7 +89,7 @@ ls_handle ls_cond_create(void)
 	if (!pCV) return NULL;
 	InitializeConditionVariable(pCV);
 	return pCV;
-#elif LS_POSIX
+#else
     pthread_cond_t *cond;
     int rc;
     
@@ -106,23 +104,23 @@ ls_handle ls_cond_create(void)
     }
     
     return cond;
-#endif
+#endif // LS_WINDOWS
 }
 
 void ls_cond_wait(ls_handle cond, ls_handle lock)
 {
 #if LS_WINDOWS
 	SleepConditionVariableCS(cond, lock, INFINITE);
-#elif LS_POSIX
+#else
     pthread_cond_wait(cond, lock);
-#endif
+#endif // LS_WINDOWS
 }
 
 int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms)
 {
 #if LS_WINDOWS
 	return !SleepConditionVariableCS(cond, lock, ms);
-#elif LS_POSIX
+#else
     struct timespec ts;
     struct timeval tv;
     int rc;
@@ -136,23 +134,23 @@ int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms)
     ts.tv_nsec += tv.tv_usec * 1000;
     
     return !!pthread_cond_timedwait(cond, lock, &ts);
-#endif
+#endif // LS_WINDOWS
 }
 
 void ls_cond_signal(ls_handle cond)
 {
 #if LS_WINDOWS
 	WakeConditionVariable(cond);
-#elif LS_POSIX
+#else
     pthread_cond_signal(cond);
-#endif
+#endif // LS_WINDOWS
 }
 
 void ls_cond_broadcast(ls_handle cond)
 {
 #if LS_WINDOWS
 	WakeAllConditionVariable(cond);
-#elif LS_POSIX
+#else
     pthread_cond_broadcast(cond);
-#endif
+#endif // LS_WINDOWS
 }
