@@ -62,6 +62,8 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 	struct ls_watch *w = *(struct ls_watch **)lpParam;
 	struct ls_watch_event_imp *e, *next;
 	BOOL b;
+	DWORD dwBytes;
+	PFILE_NOTIFY_EXTENDED_INFORMATION pNotify;
 	
 	EnterCriticalSection(&w->cs);
 	w->open = 1;
@@ -81,7 +83,7 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 			NOTIF_BUFSIZE,
 			w->recursive,
 			FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SECURITY,
-			NULL,
+			&dwBytes,
 			NULL,
 			NULL,
 			ReadDirectoryNotifyExtendedInformation);
@@ -107,27 +109,47 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 			break;
 		}
 
-		ZeroMemory(e->target, MAX_PATH);
+		e->next = NULL;
+
 		ZeroMemory(e->source, MAX_PATH);
+		ZeroMemory(e->target, MAX_PATH);
 
 		switch (w->u.fnei.Action)
 		{
 		case FILE_ACTION_ADDED:
 			e->action = LS_WATCH_ADD;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->target, MAX_PATH);
+			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_REMOVED:
 			e->action = LS_WATCH_REMOVE;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->target, MAX_PATH);
+			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_MODIFIED:
 			e->action = LS_WATCH_MODIFY;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->target, MAX_PATH);
+			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_RENAMED_OLD_NAME:
-			// TODO: implement
-		case FILE_ACTION_RENAMED_NEW_NAME:
-			// TODO: implement
+			if (w->u.fnei.NextEntryOffset == 0) // sanity check
+			{
+				// ignore
+				ls_free(e), e = NULL;
+				break;
+			}
+
+			pNotify = (PFILE_NOTIFY_INFORMATION)((LPBYTE)w->u.buf + w->u.fnei.NextEntryOffset);
+			if (pNotify->Action != FILE_ACTION_RENAMED_NEW_NAME)
+			{
+				// ignore
+				ls_free(e), e = NULL;
+				break;
+			}
+
+			e->action = LS_WATCH_RENAME;
+			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
+			ls_wchar_to_utf8_buf(pNotify->FileName, e->target, MAX_PATH);
+
+			break;
+		case FILE_ACTION_RENAMED_NEW_NAME: // always follows OLD_NAME
 		default:
 			// ignore
 			ls_free(e), e = NULL;
