@@ -9,10 +9,13 @@
 #include "ls_native.h"
 
 #if LS_WINDOWS
-
 #define NOTIF_BUFSIZE 1024
-
 #endif // LS_WINDOWS
+
+#define WATCH_ERROR -1 // thread error
+#define WATCH_RUNNING 0 // thread running
+#define WATCH_NOT_STARTED 1 // thread not started
+#define WATCH_CLOSING 2 // explicit close by user
 
 struct ls_watch_event_imp
 {
@@ -32,25 +35,17 @@ struct ls_watch
 #if LS_WINDOWS
 	HANDLE hDirectory;
 
-	HANDLE hThread;
-
 	CRITICAL_SECTION cs;
 	CONDITION_VARIABLE cv;
 
-	int was_error;
 	int recursive;
-	int open;
+
+	int state; // thread state
 
 	char source[MAX_PATH];
 	char target[MAX_PATH];
 
 	struct ls_watch_event_imp *front, *back;
-
-	union
-	{
-		FILE_NOTIFY_EXTENDED_INFORMATION fnei;
-		BYTE buf[NOTIF_BUFSIZE];
-	} u;
 #else
 #endif // LS_WINDOWS
 };
@@ -63,10 +58,28 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 	struct ls_watch_event_imp *e, *next;
 	BOOL b;
 	DWORD dwBytes;
+	HANDLE hDirectory;
+	int recursive;
+
+	union
+	{
+		FILE_NOTIFY_EXTENDED_INFORMATION fnei;
+		BYTE buf[NOTIF_BUFSIZE];
+	} u;
+
 	PFILE_NOTIFY_EXTENDED_INFORMATION pNotify;
-	
+
 	EnterCriticalSection(&w->cs);
-	w->open = 1;
+
+	assert(w->state == WATCH_NOT_STARTED);
+
+	// save handle and flags
+
+	hDirectory = w->hDirectory;
+	recursive = w->recursive;
+
+	// signal that we're running
+	w->state = WATCH_RUNNING;
 	WakeAllConditionVariable(&w->cv);
 
 	do
@@ -74,14 +87,14 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 		// lock is held
 		LeaveCriticalSection(&w->cs);
 
-		ZeroMemory(&w->u.buf, NOTIF_BUFSIZE);
+		ZeroMemory(&u.buf, NOTIF_BUFSIZE);
 
 		// read changes
 		b = ReadDirectoryChangesExW(
-			w->hDirectory,
-			w->u.buf,
+			hDirectory,
+			u.buf,
 			NOTIF_BUFSIZE,
-			w->recursive,
+			recursive,
 			FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SECURITY,
 			&dwBytes,
 			NULL,
@@ -90,12 +103,12 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 		if (!b)
 		{
 			EnterCriticalSection(&w->cs);
-			w->was_error = 1;
+			w->state = WATCH_ERROR;
 			break;
 		}
 
 		EnterCriticalSection(&w->cs);
-		if (!w->open)
+		if (w->state == WATCH_CLOSING)
 			break;
 		LeaveCriticalSection(&w->cs);
 
@@ -105,7 +118,7 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 		if (!e)
 		{
 			EnterCriticalSection(&w->cs);
-			w->was_error = 1;
+			w->state = WATCH_ERROR;
 			break;
 		}
 
@@ -114,29 +127,29 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 		ZeroMemory(e->source, MAX_PATH);
 		ZeroMemory(e->target, MAX_PATH);
 
-		switch (w->u.fnei.Action)
+		switch (u.fnei.Action)
 		{
 		case FILE_ACTION_ADDED:
 			e->action = LS_WATCH_ADD;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
+			ls_wchar_to_utf8_buf(u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_REMOVED:
 			e->action = LS_WATCH_REMOVE;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
+			ls_wchar_to_utf8_buf(u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_MODIFIED:
 			e->action = LS_WATCH_MODIFY;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
+			ls_wchar_to_utf8_buf(u.fnei.FileName, e->source, MAX_PATH);
 			break;
 		case FILE_ACTION_RENAMED_OLD_NAME:
-			if (w->u.fnei.NextEntryOffset == 0) // sanity check
+			if (u.fnei.NextEntryOffset == 0) // sanity check
 			{
 				// ignore
 				ls_free(e), e = NULL;
 				break;
 			}
 
-			pNotify = (PFILE_NOTIFY_INFORMATION)((LPBYTE)w->u.buf + w->u.fnei.NextEntryOffset);
+			pNotify = (PFILE_NOTIFY_EXTENDED_INFORMATION)(u.buf + u.fnei.NextEntryOffset);
 			if (pNotify->Action != FILE_ACTION_RENAMED_NEW_NAME)
 			{
 				// ignore
@@ -145,7 +158,7 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 			}
 
 			e->action = LS_WATCH_RENAME;
-			ls_wchar_to_utf8_buf(w->u.fnei.FileName, e->source, MAX_PATH);
+			ls_wchar_to_utf8_buf(u.fnei.FileName, e->source, MAX_PATH);
 			ls_wchar_to_utf8_buf(pNotify->FileName, e->target, MAX_PATH);
 
 			break;
@@ -173,12 +186,14 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 			EnterCriticalSection(&w->cs);
 
 		// lock is held
-	} while (w->open);
+	} while (w->state == WATCH_RUNNING);
 
 	// lock is held
 
+	WakeAllConditionVariable(&w->cv); // prevent deadlock
+
 	// wait until user closes the watch
-	while (w->open)
+	while (w->state == WATCH_RUNNING)
 		SleepConditionVariableCS(&w->cv, &w->cs, INFINITE);
 	LeaveCriticalSection(&w->cs);
 
@@ -193,7 +208,7 @@ static DWORD WINAPI WatchThreadProc(LPVOID lpParam)
 
 	w->front = NULL, w->back = NULL;
 
-	CloseHandle(w->hDirectory);
+	CloseHandle(hDirectory);
 	DeleteCriticalSection(&w->cs);	
 
 	ls_free(w);
@@ -210,32 +225,13 @@ static void LS_CLASS_FN ls_watch_dtor(struct ls_watch **pw)
 
 	if (!w) return;
 
-	if (w->open)
-	{
-		assert(w->hThread);
+	// signal thread to close
+	EnterCriticalSection(&w->cs);
+	w->state = WATCH_CLOSING;
+	WakeAllConditionVariable(&w->cv);
+	LeaveCriticalSection(&w->cs);
 
-		EnterCriticalSection(&w->cs);
-		w->open = 0;
-		WakeAllConditionVariable(&w->cv);
-		LeaveCriticalSection(&w->cs);
-
-		CloseHandle(w->hThread); // detach thread, don't wait
-
-		// thread will clean up the rest
-	}
-	else
-	{
-		assert(!w->hThread);
-
-		// our responsibility to clean up
-
-		if (w->hDirectory && w->hDirectory != INVALID_HANDLE_VALUE)
-			CloseHandle(w->hDirectory);
-
-		DeleteCriticalSection(&w->cs);
-
-		ls_free(w);
-	}
+	// thread will clean up the rest
 #else
 #endif // LS_WINDOWS
 }
@@ -247,6 +243,13 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch **pw, unsigned long ms)
 	DWORD dwRet;
 
 	EnterCriticalSection(&w->cs);
+
+	if (w->state != WATCH_RUNNING)
+	{
+		LeaveCriticalSection(&w->cs);
+		return -1;
+	}
+
 	if (!w->front)
 	{
 		dwRet = SleepConditionVariableCS(&w->cv, &w->cs, ms);
@@ -260,6 +263,7 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch **pw, unsigned long ms)
 			return -1;
 		}
 	}
+
 	LeaveCriticalSection(&w->cs);
 
 	return 0;
@@ -281,6 +285,7 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	struct ls_watch **h;
 	struct ls_watch *w;
 	WCHAR szPath[MAX_PATH];
+	HANDLE hThread;
 	int rc;
 
 	h = ls_handle_create(&WatchClass);
@@ -294,6 +299,7 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	}
 
 	w = *h;
+	w->state = WATCH_NOT_STARTED;
 
 	InitializeCriticalSection(&w->cs);
 	InitializeConditionVariable(&w->cv);
@@ -301,6 +307,9 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	rc = ls_utf8_to_wchar_buf(dir, szPath, MAX_PATH);
 	if (!rc)
 	{
+		DeleteCriticalSection(&w->cs);
+		ls_free(w), *h = NULL;
+
 		ls_close(h);
 		return NULL;
 	}
@@ -312,23 +321,31 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, NULL);
 	if (w->hDirectory == INVALID_HANDLE_VALUE)
 	{
+		DeleteCriticalSection(&w->cs);
+		ls_free(w), *h = NULL;
+
 		ls_close(h);
 		return NULL;
 	}
 
-
-	w->hThread = CreateThread(NULL, 0, &WatchThreadProc, h, 0, NULL);
-	if (!w->hThread)
+	hThread = CreateThread(NULL, 0, &WatchThreadProc, h, 0, NULL);
+	if (!hThread)
 	{
+		CloseHandle(w->hDirectory);
+		DeleteCriticalSection(&w->cs);
+		ls_free(w), *h = NULL;
+
 		ls_close(h);
 		return NULL;
 	}
 
 	// wait for thread to initialize
 	EnterCriticalSection(&w->cs);
-	while (!w->open)
+	while (w->state == WATCH_NOT_STARTED)
 		SleepConditionVariableCS(&w->cv, &w->cs, INFINITE);
 	LeaveCriticalSection(&w->cs);
+
+	CloseHandle(hThread); // detach
 
 	return h;
 #else
