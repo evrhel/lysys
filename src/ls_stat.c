@@ -174,7 +174,7 @@ static void LS_CLASS_FN ls_dir_data_dtor(struct ls_dir_data *data)
 #endif // LS_WINDOWS
 }
 
-static struct ls_class DirClass = {
+static const struct ls_class DirClass = {
 	.type = LS_DIR,
 	.cb = sizeof(struct ls_dir_data),
 	.dtor = (ls_dtor_t)&ls_dir_data_dtor,

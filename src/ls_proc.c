@@ -133,13 +133,12 @@ static int LS_CLASS_FN ls_proc_wait(struct ls_proc *proc, unsigned long ms)
 #endif // LS_WINDOWS
 }
 
-static struct ls_class ProcClass = {
+static const struct ls_class ProcClass = {
 	.type = LS_PROC,
 	.cb = sizeof(struct ls_proc),
 	.dtor = (ls_dtor_t)&ls_proc_dtor,
 	.wait = (ls_wait_t)&ls_proc_wait
 };
-
 
 struct ls_pipe_server
 {
@@ -340,14 +339,14 @@ static int LS_CLASS_FN ls_pipe_client_wait(struct ls_pipe_client *pipe, unsigned
 #endif // LS_WINDOWS
 }
 
-static struct ls_class PipeServerClass = {
+static const struct ls_class PipeServerClass = {
 	.type = LS_PIPE,
 	.cb = sizeof(struct ls_pipe_server),
 	.dtor = (ls_dtor_t)&ls_pipe_server_dtor,
 	.wait = (ls_wait_t)&ls_pipe_server_wait
 };
 
-static struct ls_class PipeClientClass = {
+static const struct ls_class PipeClientClass = {
 	.type = LS_PIPE,
 	.cb = sizeof(struct ls_pipe_client),
 	.dtor = (ls_dtor_t)&ls_pipe_client_dtor,

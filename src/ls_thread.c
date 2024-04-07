@@ -53,7 +53,7 @@ static DWORD CALLBACK ls_thread_startup(struct ls_thread *th)
 }
 #endif // LS_WINDOWS
 
-static struct ls_class ThreadClass = {
+static const struct ls_class ThreadClass = {
 	.type = LS_THREAD,
 	.cb = sizeof(struct ls_thread),
 	.dtor = (ls_dtor_t)&ls_thread_dtor,

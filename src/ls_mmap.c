@@ -16,7 +16,7 @@ static void LS_CLASS_FN ls_mmap_dtor(void *map)
 #endif // LS_WINDOWS
 }
 
-static struct ls_class FileMappingClass = {
+static const struct ls_class FileMappingClass = {
 	.type = LS_FILEMAPPING,
 #if LS_WINDOWS
 	.cb = sizeof(HANDLE),

@@ -21,7 +21,7 @@ static void LS_CLASS_FN file_dtor(void *param)
 #endif // LS_WINDOWS
 }
 
-static struct ls_class FileClass = {
+static const struct ls_class FileClass = {
 	.type = LS_FILE,
 #if LS_WINDOWS
 	.cb = sizeof(HANDLE),

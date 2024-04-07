@@ -4,7 +4,7 @@
 
 #include "ls_handle.h"
 
-static struct ls_class LockClass = {
+static const struct ls_class LockClass = {
 	.type = LS_LOCK,
 #if LS_WINDOWS
 	.cb = sizeof(CRITICAL_SECTION),
@@ -16,7 +16,7 @@ static struct ls_class LockClass = {
 	.wait = NULL
 };
 
-static struct ls_class ConditionClass = {
+static const struct ls_class ConditionClass = {
 	.type = LS_COND,
 #if LS_WINDOWS
 	.cb = sizeof(CONDITION_VARIABLE),

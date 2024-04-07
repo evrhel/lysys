@@ -52,7 +52,7 @@ static void LS_CLASS_FN ls_event_wait(struct event *evt)
 
 #endif // LS_WINDOWS
 
-static struct ls_class EventClass = {
+static const struct ls_class EventClass = {
 	.type = LS_EVENT,
 #if LS_WINDOWS
 	.cb = sizeof(HANDLE),
