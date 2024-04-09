@@ -5,6 +5,8 @@
 #include <string.h>
 #include <assert.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <limits.h>
 
 #include "ls_handle.h"
 #include "ls_native.h"
@@ -12,8 +14,25 @@
 #if LS_WINDOWS
 #define NOTIF_BUFSIZE 1024
 #else
-#define NOTIF_BUFSIZE (offsetof(struct inotify_event, name))
+
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif // NAME_MAX
+
+#define NOTIF_BUFSIZE (sizeof(struct inotify_event) + NAME_MAX + 1)
+#define NOTIF_MINSIZE (sizeof(struct inotify_event))
 #endif // LS_WINDOWS
+
+#if LS_POSIX
+struct notif
+{
+	union
+	{
+		struct inotify_event ie;
+		char buf[NOTIF_BUFSIZE];
+	} u;
+};
+#endif // LS_POSIX
 
 struct ls_watch_event_imp
 {
@@ -50,7 +69,7 @@ struct ls_watch
 	struct ls_watch_event_imp *front, *back;
 #else
 	int notify; // inotify instance
-	int flags; // inotify flags
+	int watch; // inotify watch
 
 	int recursive;
 
@@ -60,6 +79,12 @@ struct ls_watch
 
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
+
+	char avail[NOTIF_BUFSIZE];
+	size_t avail_size;
+
+	char source[NAME_MAX];
+	char target[NAME_MAX];
 
 	struct ls_watch_event_imp *front, *back;
 #endif // LS_WINDOWS
@@ -106,16 +131,69 @@ static int read_directory_changes(struct ls_watch *w)
 
 #if LS_POSIX
 
+static ssize_t read_avail(struct ls_watch *w, void *buf, size_t n)
+{
+	ssize_t to_copy;
+
+	to_copy = w->avail_size < n ? w->avail_size : n;
+	memcpy(buf, w->avail, to_copy);
+	w->avail_size -= to_copy;
+	memmove(w->avail, w->avail + to_copy, w->avail_size);
+
+	return to_copy;
+}
+
+static ssize_t read_bytes(struct ls_watch *w, void *buf, size_t cb)
+{
+	ssize_t bytes_read;
+	ssize_t total_read = 0;
+	size_t max_read;
+
+	total_read += read_avail(w, buf, cb);
+	if (total_read == cb)
+		return cb;
+
+	max_read = NOTIF_BUFSIZE - w->avail_size;
+	bytes_read = read(w->notify, w->avail + w->avail_size, max_read);
+	if (bytes_read <= 0)
+		return bytes_read;
+	w->avail_size += bytes_read;
+
+	total_read += read_avail(w, (uint8_t *)buf + total_read, cb - total_read);
+	
+	return total_read;
+}
+
+static ssize_t read_event(struct ls_watch *w, struct notif *pn)
+{
+	ssize_t bytes_read;
+	size_t total_bytes = 0;
+
+	bytes_read = read_bytes(w, pn->u.buf, NOTIF_MINSIZE);
+	if (bytes_read <= 0)
+		return -1;
+	total_bytes += bytes_read;
+
+	if (bytes_read < NOTIF_MINSIZE)
+		return -1;
+
+	// read name if present
+	if (pn->u.ie.len)
+	{
+		bytes_read = read_bytes(w, pn->u.ie.name, pn->u.ie.len);
+		if (bytes_read <= 0)
+			return -1;
+		total_bytes += bytes_read;
+	}
+
+	return total_bytes;
+}
+
 static void *ls_watch_thread(void *arg)
 {
 	struct ls_watch *w = arg;
-	char buf[NOTIF_BUFSIZE];
-	struct inotify_event *ie = (struct inotify_event *)buf;
-	int rc;
+	struct notif n;
 	ssize_t bytes_read;
-	char *name = NULL;
-	char *new_name;
-	uint32_t name_len = 0;
 	struct ls_watch_event_imp *e = NULL;
 
 	for (;;)
@@ -128,63 +206,71 @@ static void *ls_watch_thread(void *arg)
 		}
 		pthread_mutex_unlock(&w->lock);
 
-		bytes_read = read(w->notify, buf, NOTIF_BUFSIZE);
+		bytes_read = read_event(w, &n);
 		if (bytes_read <= 0)
 			break;
 
-		if (ie->len > name_len)
-		{
-			new_name = ls_realloc(name, ie->len);
-			if (!new_name)
-				break;
-			name = new_name;
-
-			name_len = ie->len;
-		}
-
-		pthread_mutex_lock(&w->lock);
-		if (w->stop)
-		{
-			pthread_mutex_unlock(&w->lock);
-			break;
-		}
-		pthread_mutex_unlock(&w->lock);
-
-		bytes_read = read(w->notify, name, ie->len);
-		if (bytes_read <= 0)
+		// require name
+		if (!n.u.ie.len)
 			break;
 
 		e = ls_calloc(1, sizeof(struct ls_watch_event_imp));
 		if (!e)
 			break;
 		
-		if (ie->mask & IN_CREATE)
+		if (n.u.ie.mask & IN_CREATE)
 		{
 			e->action = LS_WATCH_ADD;
-			e->source = ls_strdup(name);
+			e->source = ls_strdup(n.u.ie.name);
 			if (!e->source)
 				break;
 		}
-		else if (ie->mask & IN_DELETE)
+		else if (n.u.ie.mask & IN_DELETE)
 		{
 			e->action = LS_WATCH_REMOVE;
-			e->source = ls_strdup(name);
+			e->source = ls_strdup(n.u.ie.name);
 			if (!e->source)
 				break;
 		}
-		else if (ie->mask & IN_MODIFY)
+		else if (n.u.ie.mask & IN_MODIFY)
 		{
 			e->action = LS_WATCH_MODIFY;
-			e->source = ls_strdup(name);
+			e->source = ls_strdup(n.u.ie.name);
 			if (!e->source)
 				break;
 		}
-		else if (ie->mask & IN_MOVE)
+		else if (n.u.ie.mask & IN_MOVE)
 		{
 			e->action = LS_WATCH_RENAME;
-			ls_free(e), e = NULL;
+			if (n.u.ie.mask & IN_MOVED_FROM)
+			{
+				e->source = ls_strdup(n.u.ie.name);
+				if (!e->source)
+					break;
+			}
+			else
+			{
+				e->source = ls_strdup(n.u.ie.name);
+				if (!e->source)
+					break;
+			}
 
-			// TODO: implement rename
+			bytes_read = read_event(w, &n);
+			if (bytes_read <= 0)
+				break;
+
+			if (n.u.ie.mask & IN_MOVED_FROM)
+			{
+				e->target = ls_strdup(n.u.ie.name);
+				if (!e->target)
+					break;
+			}
+			else
+			{
+				e->target = ls_strdup(n.u.ie.name);
+				if (!e->target)
+					break;
+			}
 		}
 		else
 			ls_free(e), e = NULL;
@@ -205,7 +291,7 @@ static void *ls_watch_thread(void *arg)
 				w->back = e;
 			}
 
-			pthread_cond_broadcast(&w->cond);
+			pthread_cond_signal(&w->cond);
 			pthread_mutex_unlock(&w->lock);
 		
 			e = NULL;
@@ -219,9 +305,6 @@ static void *ls_watch_thread(void *arg)
 		if (e->target) ls_free(e->target);
 		ls_free(e);
 	}
-
-	if (name)
-		ls_free(name);
 	
 	pthread_mutex_lock(&w->lock);
 	w->running = 0;
@@ -246,6 +329,7 @@ static void LS_CLASS_FN ls_watch_dtor(struct ls_watch *w)
 	pthread_mutex_unlock(&w->lock);
 
 	pthread_kill(w->thread, SIGINT); // interrupt blocking calls
+	inotify_rm_watch(w->notify, w->watch);
 	close(w->notify);
 
 	pthread_join(w->thread, NULL);
@@ -258,8 +342,8 @@ static void LS_CLASS_FN ls_watch_dtor(struct ls_watch *w)
 	while (e)
 	{
 		next = e->next;
-		if (e->source) free(e->source);
-		if (e->target) free(e->target);
+		if (e->source) ls_free(e->source);
+		if (e->target) ls_free(e->target);
 		ls_free(e);
 		e = next;
 	}
@@ -291,13 +375,19 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 		if (ms == LS_INFINITE)
 		{
 			pthread_cond_wait(&w->cond, &w->lock);
-			pthread_mutex_lock(&w->lock);
+			if (rc != 0)
+				return -1;
 		}
 		else
 		{
-			// TODO: implement timeout
-			pthread_mutex_unlock(&w->lock);
-			return 1;
+			ts.tv_sec = remain / 1000;
+			ts.tv_nsec = (remain % 1000) * 1000000;
+
+			rc = pthread_cond_timedwait(&w->cond, &w->lock, &ts);
+			if (rc == ETIMEDOUT)
+				return 1;
+			else if (rc != 0)
+				return -1;
 		}
 	}
 
@@ -355,7 +445,8 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	int rc;
 
 	w = ls_handle_create(&WatchClass);
-	if (!w) return NULL;
+	if (!w)
+		return NULL;
 
 	w->recursive = !!recursive;
 
@@ -383,11 +474,36 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 		return NULL;
 	}
 
+	// use absolute path
+	w->watch = inotify_add_watch(w->notify, dir, IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVE);
+	if (w->watch == -1)
+	{
+		close(w->notify);
+		pthread_cond_destroy(&w->cond);
+		pthread_mutex_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+
+	// set close-on-exec flag
+	rc = fcntl(w->watch, F_SETFD, FD_CLOEXEC);
+	if (rc == -1)
+	{
+		inotify_rm_watch(w->notify, w->watch);
+		close(w->notify);
+		pthread_cond_destroy(&w->cond);
+		pthread_mutex_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+
 	w->running = 1;
 	
 	rc = pthread_create(&w->thread, NULL, &ls_watch_thread, w);
 	if (rc == -1)
 	{
+		w->running = 0;
+		inotify_rm_watch(w->notify, w->watch);
 		close(w->notify);
 		pthread_cond_destroy(&w->cond);
 		pthread_mutex_destroy(&w->lock);
@@ -429,6 +545,9 @@ int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
 	struct ls_watch *w = watch;
 	struct ls_watch_event_imp *e;
 
+	event->source = NULL;
+	event->target = NULL;
+
 	pthread_mutex_lock(&w->lock);
 
 	if (!w->front)
@@ -442,12 +561,24 @@ int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
 	if (!w->front)
 		w->back = NULL;
 
+	if (e->source)
+	{
+		strncpy(w->source, e->source, NAME_MAX);
+		event->source = w->source;
+	}
+
+	if (e->target)
+	{
+		strncpy(w->target, e->target, NAME_MAX);
+		event->target = w->target;
+	}
+
 	pthread_mutex_unlock(&w->lock);
 
 	event->action = e->action;
-	event->source = e->source;
-	event->target = e->target;
 
+	if (e->target) ls_free(e->target);
+	if (e->source) ls_free(e->source);
 	ls_free(e);
 
 	return 0;
