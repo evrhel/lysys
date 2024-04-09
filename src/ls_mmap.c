@@ -88,8 +88,8 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
     int flags = 0;
     int fd;
     size_t *map_res;
-    
-    fd = (int)file;
+
+	fd = *(int *)file;
     
     if (!map)
         return NULL;
@@ -116,7 +116,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
     else
         flags |= MAP_SHARED;
     
-    addr = mmap(NULL, size, protect, flags, fd, NULL);
+    addr = mmap(NULL, size, protect, flags, fd, offset);
     if (!addr)
     {
         ls_close(map_res);

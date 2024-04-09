@@ -23,6 +23,7 @@ static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent, unsigned long ms)
 }
 #else
 
+
 struct event
 {
     pthread_mutex_t m;
@@ -32,11 +33,8 @@ struct event
 
 static void LS_CLASS_FN ls_event_dtor(struct event *evt)
 {
-    if (evt->c)
-        pthread_cond_destroy(&evt->c);
-    
-    if (evt->m)
-        pthread_mutex_destroy(&evt->m);
+    pthread_cond_destroy(&evt->c);
+    pthread_mutex_destroy(&evt->m);
 }
 
 static void LS_CLASS_FN ls_event_wait(struct event *evt)
@@ -76,18 +74,19 @@ ls_handle ls_event_create(void)
     int rc;
     evt = ls_handle_create(&EventClass);
     if (!evt) return NULL;
-    
+
     rc = pthread_mutex_init(&evt->m, NULL);
     if (rc != 0)
     {
-        ls_close(evt);
+        ls_handle_dealloc(evt);
         return NULL;
     }
     
     rc = pthread_cond_init(&evt->c, NULL);
     if (rc != 0)
     {
-        ls_close(evt);
+        pthread_mutex_destroy(&evt->m);
+        ls_handle_dealloc(evt);
         return NULL;
     }
     

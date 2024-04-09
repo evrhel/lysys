@@ -59,44 +59,6 @@ char *ls_wchar_to_utf8(LPCWSTR wstr)
 	return utf8;
 }
 
-DWORD ls_protect_to_flags(int protect)
-{
-	DWORD flProtect = 0;
-
-	if (protect & LS_PROT_READ)
-		flProtect |= PAGE_READONLY;
-
-	if (protect & LS_PROT_WRITE)
-		flProtect |= PAGE_READWRITE;
-
-	if (protect & LS_PROT_WRITECOPY)
-		flProtect |= PAGE_WRITECOPY;
-
-	if (protect & LS_PROT_EXEC)
-		flProtect |= PAGE_EXECUTE;
-
-	return flProtect;
-}
-
-int ls_flags_to_protect(DWORD flProtect)
-{
-	int protect = 0;
-
-	if (flProtect & PAGE_READONLY)
-		protect |= LS_PROT_READ;
-
-	if (flProtect & PAGE_READWRITE)
-		protect |= LS_PROT_WRITE;
-
-	if (flProtect & PAGE_WRITECOPY)
-		protect |= LS_PROT_WRITECOPY;
-
-	if (flProtect & PAGE_EXECUTE)
-		protect |= LS_PROT_EXEC;
-
-	return protect;
-}
-
 DWORD ls_get_access_rights(int access)
 {
 	DWORD dwDesiredAccess = 0;
@@ -279,11 +241,65 @@ failure:
 	return NULL;
 }
 
-#endif
+#endif // LS_WINDOWS
 
 #if LS_POSIX
-int ls_protect_to_flags(int protect)
+
+int ls_access_to_oflags(int access)
 {
+	int oflags = 0;
+
+	if (access & LS_A_READ)
+	{
+		if (access & LS_A_WRITE)
+			oflags |= O_RDWR;
+		else
+			oflags |= O_RDONLY;
+	}
+	else if (access & LS_A_WRITE)
+		oflags |= O_WRONLY;
+
+	return oflags;
+}
+
+int ls_create_to_oflags(int create)
+{
+	int oflags = 0;
+
+	switch (create)
+	{
+	case LS_CREATE_NEW: oflags |= O_CREAT | O_EXCL; break;
+	case LS_CREATE_ALWAYS: oflags |= O_CREAT | O_TRUNC; break;
+	case LS_OPEN_EXISTING: break;
+	case LS_OPEN_ALWAYS: oflags |= O_CREAT; break;
+	case LS_TRUNCATE_EXISTING: oflags |= O_TRUNC; break;
+	default: break;
+	}
+
+	return oflags;
+}
+
+#endif // LS_POSIX
+
+native_flags_t ls_protect_to_flags(int protect)
+{
+#if LS_WINDOWS
+	DWORD flProtect = 0;
+
+	if (protect & LS_PROT_READ)
+		flProtect |= PAGE_READONLY;
+
+	if (protect & LS_PROT_WRITE)
+		flProtect |= PAGE_READWRITE;
+
+	if (protect & LS_PROT_WRITECOPY)
+		flProtect |= PAGE_WRITECOPY;
+
+	if (protect & LS_PROT_EXEC)
+		flProtect |= PAGE_EXECUTE;
+
+	return flProtect;
+#else
     int prot = 0;
     
     if (protect & LS_PROT_READ)
@@ -296,10 +312,28 @@ int ls_protect_to_flags(int protect)
         prot |= PROT_EXEC;
     
     return prot;
+#endif // LS_WINDOWS
 }
 
-int ls_flags_to_protect(int prot)
+int ls_flags_to_protect(native_flags_t prot)
 {
+#if LS_WINDOWS
+	int protect = 0;
+
+	if (flProtect & PAGE_READONLY)
+		protect |= LS_PROT_READ;
+
+	if (flProtect & PAGE_READWRITE)
+		protect |= LS_PROT_WRITE;
+
+	if (flProtect & PAGE_WRITECOPY)
+		protect |= LS_PROT_WRITECOPY;
+
+	if (flProtect & PAGE_EXECUTE)
+		protect |= LS_PROT_EXEC;
+
+	return protect;
+#else
     int protect = 0;
     
     if (prot & PROT_READ)
@@ -312,5 +346,5 @@ int ls_flags_to_protect(int prot)
         protect |= LS_PROT_EXEC;
     
     return protect;
+#endif // LS_WINDOWS
 }
-#endif

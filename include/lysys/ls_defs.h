@@ -49,15 +49,19 @@
 #if _WIN64 || __x86_64__ || __ppc64__
 	#define LS_x86_64 1
 	#define LS_ARCH "x86_64"
+	#define LS_ADDR_SIZE 8
 #elif _WIN32 || __i386__ || __ppc__
 	#define LS_x86 1
 	#define LS_ARCH "x86"
+	#define LS_ADDR_SIZE 4
 #elif defined(__arm__) || defined(ARM) || defined(_ARM_)
 	#define LS_ARM 1
 	#define LS_ARCH "arm"
+	#define LS_ADDR_SIZE 4
 #elif (defined(__arm64__) && defined(__APPLE__)) || defined(__aarch64__)
 	#define LS_ARM64 1
 	#define LS_ARCH "arm64"
+	#define LS_ADDR_SIZE 8
 #else
 	#define LS_ARCH "unknown"
 #endif // _WIN64

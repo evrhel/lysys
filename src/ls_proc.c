@@ -10,6 +10,7 @@
 #include <memory.h>
 #include <string.h>
 #include <signal.h>
+#include <stdio.h>
 
 #define LS_PROC_SELF ((ls_handle *)-1)
 #define LS_PIPE_NAME_SIZE 256
@@ -39,8 +40,7 @@ static void alarm_handler(int sig) { (void)sig; }
 
 static void *wait_handler(void *param)
 {
-    intptr_t iptr = param;
-    pid_t pid = (pid_t)iptr;
+    pid_t pid = (pid_t)(intptr_t)param;
     
     waitpid(pid, NULL, 0);
     
@@ -71,7 +71,7 @@ static void LS_CLASS_FN ls_proc_dtor(struct ls_proc *proc)
     {
         // not exited, reap child on daemon thread
         ipid = proc->pid;
-        rc = pthread_create(&pt, NULL, &wait_handler, ipid);
+        rc = pthread_create(&pt, NULL, &wait_handler, (void *)ipid);
         if (rc == 0)
             pthread_detach(pt);
     }

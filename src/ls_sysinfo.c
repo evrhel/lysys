@@ -1,5 +1,7 @@
 #include <lysys/ls_sysinfo.h>
 
+#include <string.h>
+
 #include "ls_native.h"
 
 int ls_get_meminfo(struct ls_meminfo *mi)
@@ -9,14 +11,22 @@ int ls_get_meminfo(struct ls_meminfo *mi)
     
     statex.dwLength = sizeof(statex);
     if (!GlobalMemoryStatusEx(&statex))
-        return 0;
+        return -1;
   
     mi->total = statex.ullTotalPhys;
     mi->avail = statex.ullAvailPhys;
-    return 1;
-#else
     return 0;
-#endif
+#else
+    struct sysinfo si;
+    int rc;
+
+    rc = sysinfo(&si);
+    if (rc == -1) return -1;
+
+    mi->total = si.totalram;
+    mi->avail = si.freeram;
+    return 0;
+#endif // LS_WINDOWS
 }
 
 int ls_get_cpuinfo(struct ls_cpuinfo *ci)
@@ -49,8 +59,29 @@ int ls_get_cpuinfo(struct ls_cpuinfo *ci)
         break;
     }
 
-    return 1;
-#else
     return 0;
-#endif
+#else
+    struct utsname uts;
+    int rc;
+
+    rc = uname(&uts);
+    if (rc == -1) return -1;
+
+    ci->num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+    if (strcmp(uts.machine, "x86_64") == 0)
+        ci->arch = LS_ARCH_AMD64;
+    else if (strcmp(uts.machine, "arm") == 0)
+        ci->arch = LS_ARCH_ARM;
+    else if (strcmp(uts.machine, "aarch64") == 0)
+        ci->arch = LS_ARCH_ARM64;
+    else if (strcmp(uts.machine, "i686") == 0)
+        ci->arch = LS_ARCH_X86;
+    else if (strcmp(uts.machine, "ia64") == 0)
+        ci->arch = LS_ARCH_IA64;
+    else
+        ci->arch = LS_ARCH_UNKNOWN;
+
+    return 0;
+#endif // LS_WINDOWS
 }

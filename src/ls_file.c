@@ -6,6 +6,7 @@
 #include <lysys/ls_stat.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "ls_handle.h"
 #include "ls_native.h"
@@ -35,11 +36,11 @@ static const struct ls_class FileClass = {
 ls_handle ls_open(const char *path, int access, int share, int create)
 {
 #if LS_WINDOWS
+	PHANDLE phFile;
 	HANDLE hFile;
 	DWORD dwDesiredAccess;
 	DWORD dwFlagsAndAttributes;
 	WCHAR szPath[MAX_PATH];
-	ls_handle file;
 	int len;
 
 	dwDesiredAccess = ls_get_access_rights(access);
@@ -48,19 +49,40 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 	len = ls_utf8_to_wchar_buf(path, szPath, MAX_PATH);
 	if (!len) return NULL;
 
-	file = ls_handle_create(&FileClass);
+	phFile = ls_handle_create(&FileClass);
 	if (!file) return NULL;
 
 	hFile = CreateFileW(szPath, dwDesiredAccess, share, NULL, create,
 		dwFlagsAndAttributes, NULL);
 
-	if (hFile == INVALID_HANDLE_VALUE) return NULL;
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		ls_handle_dealloc(phFile);
+		return NULL;
+	}
 
-	*(PHANDLE)file = hFile;
-
-	return file;
+	*phFile = hFile;
+	return phFile;
 #else
-	return NULL;
+	int *pfd;
+	int fd;
+	int oflags;
+
+	oflags = ls_access_to_oflags(access);
+	oflags |= ls_create_to_oflags(create);
+
+	pfd = ls_handle_create(&FileClass);
+	if (!pfd) return NULL;
+
+	fd = open(path, oflags, 0666);
+	if (fd == -1)
+	{
+		ls_handle_dealloc(pfd);
+		return NULL;
+	}
+
+	*pfd = fd;
+	return pfd;
 #endif // LS_WINDOWS
 }
 
@@ -78,7 +100,8 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 
 	return liNewPointer.QuadPart;
 #else
-	return -1;
+	int fd = *(int *)file;
+	return lseek(fd, offset, origin);
 #endif // LS_WINDOWS
 }
 
@@ -131,7 +154,34 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 
 	return size - remaining;
 #else
-	return -1;
+	int fd;
+	size_t bytes_read;
+	size_t remaining;
+
+	fd = *(int *)file;
+
+	if (async)
+		return -1; // TODO: Implement async I/O
+
+	remaining = size;
+	while (remaining != 0)
+	{
+		bytes_read = (size_t)read(fd, buffer, remaining);
+		if (bytes_read == -1)
+		{
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			return -1;
+		}
+
+		if (bytes_read == 0)
+			break;
+
+		remaining -= bytes_read;
+		buffer = (uint8_t *)buffer + bytes_read;
+	}
+
+	return size - remaining;
 #endif // LS_WINDOWS
 }
 
@@ -181,7 +231,34 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 
 	return size - remaining;
 #else
-	return -1;
+	int fd;
+	size_t bytes_written;
+	size_t remaining;
+
+	fd = *(int *)file;
+
+	if (async)
+		return -1; // TODO: Implement async I/O
+
+	remaining = size;
+	while (remaining != 0)
+	{
+		bytes_written = (size_t)write(fd, buffer, remaining);
+		if (bytes_written == -1)
+		{
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			return -1;
+		}
+
+		if (bytes_written == 0)
+			break;
+
+		remaining -= bytes_written;
+		buffer = (const uint8_t *)buffer + bytes_written;
+	}
+
+	return size - remaining;
 #endif // LS_WINDOWS
 }
 
@@ -190,8 +267,8 @@ int ls_flush(ls_handle file)
 #if LS_WINDOWS
 	return FlushFileBuffers(*(PHANDLE)file) ? 0 : -1;
 #else
-	return -1;
-#endif
+	return fsync(*(int *)file);
+#endif // LS_WINDOWS
 }
 
 int ls_get_async_io_result(ls_handle file, struct ls_async_io *async,
@@ -222,6 +299,7 @@ int ls_get_async_io_result(ls_handle file, struct ls_async_io *async,
 
 	return (int)async->status;
 #else
+	// TODO: Implement async I/O
 	return LS_IO_ERROR;
 #endif // LS_WINDOWS
 }
@@ -233,6 +311,7 @@ int ls_cancel_async_io(ls_handle file, struct ls_async_io *async)
 	LPOVERLAPPED lpOl = async ? (LPOVERLAPPED)async->reserved : NULL;
 	return CancelIoEx(hFile, lpOl) ? 0 : -1;
 #else
+	// TODO: Implement async I/O
 	return -1;
 #endif // LS_WINDOWS
 }
@@ -260,7 +339,7 @@ int ls_move(const char *old_path, const char *new_path)
 
 	return rc ? 0 : -1;
 #else
-	return -1;
+	return rename(old_path, new_path);
 #endif // LS_WINDOWS
 }
 
@@ -287,7 +366,25 @@ int ls_copy(const char *old_path, const char *new_path)
 
 	return rc ? 0 : -1;
 #else
-	return -1;
+	int src_fd, dst_fd;
+	ssize_t r;
+
+	src_fd = open(old_path, O_RDONLY);
+	if (src_fd == -1) return -1;
+
+	dst_fd = open(new_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (dst_fd == -1)
+	{
+		close(src_fd);
+		return -1;
+	}
+
+	r = sendfile(dst_fd, src_fd, NULL, 0);
+
+	close(dst_fd);
+	close(src_fd);
+
+	return r == -1 ? -1 : 0;
 #endif // LS_WINDOWS
 }
 
@@ -306,7 +403,7 @@ int ls_delete(const char *path)
 
 	return rc ? 0 : -1;
 #else
-	return -1;
+	return unlink(path);
 #endif // LS_WINDOWS
 }
 
@@ -347,7 +444,24 @@ int ls_createfile(const char *path, size_t size)
 	CloseHandle(hFile);
 	return 0;
 #else
-	return -1;
+	int fd;
+	int r;
+
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (fd == -1) return -1;
+
+	if (size > 0)
+	{
+		r = ftruncate(fd, size);
+		if (r == -1)
+		{
+			close(fd);
+			return -1;
+		}
+	}
+
+	close(fd);
+	return 0;
 #endif // LS_WINDOWS
 }
 
@@ -366,7 +480,7 @@ int ls_createdir(const char *path)
 
 	return rc ? 0 : -1;
 #else
-	return -1;
+	return mkdir(path, 0777);
 #endif // LS_WINDOWS
 }
 

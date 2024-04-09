@@ -5,16 +5,6 @@
 
 #include <lysys/ls_core.h>
 
-ls_handle ls_handle_alloc(struct ls_class *clazz)
-{
-    struct ls_handle_info *hi;
-    
-    hi = ls_calloc(1, sizeof(struct ls_handle_info) + clazz->cb);
-    if (hi == NULL) return NULL;
-    hi->clazz = clazz;
-    return hi->data;
-}
-
 ls_handle ls_handle_create(const struct ls_class *clazz)
 {
 	struct ls_handle_info *hi;

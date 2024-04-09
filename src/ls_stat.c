@@ -11,9 +11,9 @@
 #include "ls_native.h"
 
 #if LS_POSIX
-int type_from_unix_flags(int flags)
+int type_from_mode(int mode)
 {
-    switch (flags & S_IFMT)
+    switch (mode & S_IFMT)
     {
     case S_IFREG:
         return LS_FT_FILE;
@@ -62,7 +62,7 @@ int ls_stat(const char *path, struct ls_stat *st)
         return -1;
     
     st->size = pst.st_size;
-    st->type = type_from_unix_flags(pst.st_flags);
+    st->type = type_from_mode(pst.st_mode);
     
     return 0;
 #endif // LS_WINDOWS
@@ -91,13 +91,16 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 #else
     struct stat pst;
     int rc;
+	int fd;
+
+	fd = *(int *)file;
     
-    rc = fstat(file, &pst);
+    rc = fstat(fd, &pst);
     if (rc == -1)
         return -1;
     
     st->size = pst.st_size;
-    st->type = type_from_unix_flags(pst.st_flags);
+    st->type = type_from_mode(pst.st_mode);
     
     return 0;
 #endif // LS_WINDOWS

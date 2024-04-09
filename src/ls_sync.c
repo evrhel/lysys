@@ -40,7 +40,7 @@ ls_handle ls_lock_create(void)
     pthread_mutex_t *mutex;
     int rc;
     
-    mutex = ls_handle_alloc(&LockClass);
+    mutex = ls_handle_create(&LockClass);
     if (!mutex) return NULL;
     rc = pthread_mutex_init(mutex, NULL);
     if (rc != 0)
@@ -93,7 +93,7 @@ ls_handle ls_cond_create(void)
     pthread_cond_t *cond;
     int rc;
     
-    cond = ls_handle_alloc(&ConditionClass);
+    cond = ls_handle_create(&ConditionClass);
     if (!cond) return NULL;
     
     rc = pthread_cond_init(cond, NULL);

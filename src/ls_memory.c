@@ -9,7 +9,7 @@ size_t ls_page_size(void)
 	GetSystemInfo(&si);
 	return si.dwPageSize;
 #else
-	return 0;
+	return getpagesize();
 #endif // LS_WINDOWS
 }
 
@@ -26,6 +26,9 @@ int ls_protect(void *ptr, size_t size, int protect, int *old)
 		*old = ls_flags_to_protect(dwOld);
 	return 0;
 #else
-	return -1;
+	int prot;
+
+	prot = ls_protect_to_flags(protect);
+	return mprotect(ptr, size, prot);
 #endif // LS_WINDOWS
 }
