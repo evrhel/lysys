@@ -50,7 +50,7 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 	if (!len) return NULL;
 
 	phFile = ls_handle_create(&FileClass);
-	if (!file) return NULL;
+	if (!phFile) return NULL;
 
 	hFile = CreateFileW(szPath, dwDesiredAccess, share, NULL, create,
 		dwFlagsAndAttributes, NULL);

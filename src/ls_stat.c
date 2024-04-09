@@ -74,7 +74,7 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	BOOL bRet;
 	BY_HANDLE_FILE_INFORMATION fi;
 
-	bRet = GetFileInformationByHandle(file, &fi);
+	bRet = GetFileInformationByHandle(*(PHANDLE)file, &fi);
 	if (!bRet) return -1;
 
 	st->size = ((uint64_t)fi.nFileSizeHigh << 32) | fi.nFileSizeLow;

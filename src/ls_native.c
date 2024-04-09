@@ -320,16 +320,16 @@ int ls_flags_to_protect(native_flags_t prot)
 #if LS_WINDOWS
 	int protect = 0;
 
-	if (flProtect & PAGE_READONLY)
+	if (prot & PAGE_READONLY)
 		protect |= LS_PROT_READ;
 
-	if (flProtect & PAGE_READWRITE)
+	if (prot & PAGE_READWRITE)
 		protect |= LS_PROT_WRITE;
 
-	if (flProtect & PAGE_WRITECOPY)
+	if (prot & PAGE_WRITECOPY)
 		protect |= LS_PROT_WRITECOPY;
 
-	if (flProtect & PAGE_EXECUTE)
+	if (prot & PAGE_EXECUTE)
 		protect |= LS_PROT_EXEC;
 
 	return protect;

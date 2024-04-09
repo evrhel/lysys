@@ -11,8 +11,7 @@
 static void LS_CLASS_FN ls_mmap_dtor(void *map)
 {
 #if LS_WINDOWS
-    PHANDLE phMap = map;
-	CloseHandle(*phMap);
+	CloseHandle(*(PHANDLE)map);
 #endif // LS_WINDOWS
 }
 
