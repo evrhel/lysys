@@ -33,7 +33,7 @@ static int LS_CLASS_FN ls_event_wait(struct event *evt, unsigned long ms)
 #if LS_WINDOWS
     DWORD dwResult;
 
-	dwResult = WaitForSingleObject(*phEvent, ms);
+	dwResult = WaitForSingleObject(evt->hEvent, ms);
 	if (dwResult == WAIT_OBJECT_0) return 0;
     if (dwResult == WAIT_TIMEOUT) return 1;
 
