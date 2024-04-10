@@ -17,8 +17,7 @@ static void LS_CLASS_FN file_dtor(void *param)
 	LPHANDLE phFile = param;
 	CloseHandle(*phFile);
 #else
-	int *pfd = param;
-	close(*pfd);
+	close(*(int *)param);
 #endif // LS_WINDOWS
 }
 
@@ -100,8 +99,7 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 
 	return liNewPointer.QuadPart;
 #else
-	int fd = *(int *)file;
-	return lseek(fd, offset, origin);
+	return lseek(*(int *)file, offset, origin);
 #endif // LS_WINDOWS
 }
 
@@ -169,7 +167,7 @@ size_t ls_read(ls_handle file, void *buffer, size_t size,
 		bytes_read = (size_t)read(fd, buffer, remaining);
 		if (bytes_read == -1)
 		{
-			if (errno == EINTR || errno == EAGAIN)
+			if (errno == EAGAIN)
 				continue;
 			return -1;
 		}
@@ -246,7 +244,7 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 		bytes_written = (size_t)write(fd, buffer, remaining);
 		if (bytes_written == -1)
 		{
-			if (errno == EINTR || errno == EAGAIN)
+			if (errno == EAGAIN)
 				continue;
 			return -1;
 		}

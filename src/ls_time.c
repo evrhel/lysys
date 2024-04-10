@@ -1,6 +1,7 @@
 #include "ls_native.h"
 
 #include <time.h>
+#include <math.h>
 
 #include <lysys/ls_time.h>
 #include <lysys/ls_defs.h>
@@ -12,13 +13,14 @@ static LARGE_INTEGER _li_start = { .QuadPart = 0 };
 static struct timespec _ts_start = { .tv_sec = 0, .tv_nsec = 0 };
 #endif // LS_WINDOWS
 
-void ls_set_epoch(void)
+int ls_set_epoch(void)
 {
 #if LS_WINDOWS
 	QueryPerformanceFrequency(&_li_freq);
 	QueryPerformanceCounter(&_li_start);
+	return 0;
 #else
-	clock_gettime(CLOCK_MONOTONIC, &_ts_start);
+	return clock_gettime(CLOCK_MONOTONIC, &_ts_start);
 #endif // LS_WINDOWS
 }
 

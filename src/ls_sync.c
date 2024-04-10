@@ -1,5 +1,8 @@
 #include "ls_native.h"
 
+#include <stdlib.h>
+#include <stdio.h>
+
 #include <lysys/ls_sync.h>
 
 #include "ls_handle.h"
@@ -53,21 +56,32 @@ ls_handle ls_lock_create(void)
 #endif // LS_WINDOWS
 }
 
-void ls_lock(ls_handle lock)
+int ls_lock(ls_handle lock)
 {
 #if LS_WINDOWS
     EnterCriticalSection(lock);
+    return 0;
 #else
-    pthread_mutex_lock(lock);
+    return pthread_mutex_lock(lock);
 #endif // LS_WINDOWS
 }
 
 int ls_trylock(ls_handle lock)
 {
 #if LS_WINDOWS
-	return TryEnterCriticalSection(lock);
+	return TryEnterCriticalSection(lock) ? 0 : 1;
 #else
-    return !!pthread_mutex_trylock(lock);
+    int rc;
+    
+    rc = pthread_mutex_trylock(lock);
+    if (rc == -1)
+    {
+        if (errno == EBUSY)
+            return 1;
+        return -1;
+    }
+
+    return 0;
 #endif // LS_WINDOWS
 }
 
@@ -107,19 +121,28 @@ ls_handle ls_cond_create(void)
 #endif // LS_WINDOWS
 }
 
-void ls_cond_wait(ls_handle cond, ls_handle lock)
+int ls_cond_wait(ls_handle cond, ls_handle lock)
 {
 #if LS_WINDOWS
-	SleepConditionVariableCS(cond, lock, INFINITE);
+    BOOL b;
+	b = SleepConditionVariableCS(cond, lock, INFINITE);
+    return b ? 0 : -1;
 #else
-    pthread_cond_wait(cond, lock);
+    return pthread_cond_wait(cond, lock); 
 #endif // LS_WINDOWS
 }
 
 int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms)
 {
 #if LS_WINDOWS
-	return !SleepConditionVariableCS(cond, lock, ms);
+    BOOL b;
+	b = SleepConditionVariableCS(cond, lock, ms);
+    if (b) return 0;
+
+    if (GetLastError() == ERROR_TIMEOUT)
+        return 1;
+    
+    return -1;
 #else
     struct timespec ts;
     struct timeval tv;
@@ -133,7 +156,13 @@ int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms)
     ts.tv_sec += tv.tv_sec;
     ts.tv_nsec += tv.tv_usec * 1000;
     
-    return !!pthread_cond_timedwait(cond, lock, &ts);
+    rc = pthread_cond_timedwait(cond, lock, &ts);
+    if (rc == ETIMEDOUT)
+        return 1;
+    else if (rc != 0)
+        return -1;
+
+    return 0;
 #endif // LS_WINDOWS
 }
 

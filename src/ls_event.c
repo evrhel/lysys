@@ -1,55 +1,80 @@
 #include <lysys/ls_event.h>
 
+#include <time.h>
+
 #include <lysys/ls_core.h>
 
 #include "ls_native.h"
 #include "ls_handle.h"
 
-#if LS_WINDOWS
-static void LS_CLASS_FN ls_event_dtor(PHANDLE phEvent)
+struct event
 {
-	CloseHandle(*phEvent);
+#if LS_WINDOWS
+    HANDLE hEvent;
+#else
+    pthread_mutex_t m;
+    pthread_cond_t c;
+    int signaled;
+#endif // LS_WINDOWS
+};
+
+static void LS_CLASS_FN ls_event_dtor(struct event *evt)
+{
+#if LS_WINDOWS
+    CloseHandle(evt->hEvent);
+#else
+    pthread_cond_destroy(&evt->c);
+    pthread_mutex_destroy(&evt->m);
+#endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_event_wait(PHANDLE phEvent, unsigned long ms)
+static int LS_CLASS_FN ls_event_wait(struct event *evt, unsigned long ms)
 {
-	DWORD dwResult;
+#if LS_WINDOWS
+    DWORD dwResult;
 
 	dwResult = WaitForSingleObject(*phEvent, ms);
 	if (dwResult == WAIT_OBJECT_0) return 0;
     if (dwResult == WAIT_TIMEOUT) return 1;
 
 	return -1;
-}
 #else
+    int rc;
+    struct timespec ts;
 
+    rc = pthread_mutex_lock(&evt->m);
+    if (rc != 0)
+        return -1;
 
-struct event
-{
-    pthread_mutex_t m;
-    pthread_cond_t c;
-    int signaled;
-};
-
-static void LS_CLASS_FN ls_event_dtor(struct event *evt)
-{
-    pthread_cond_destroy(&evt->c);
-    pthread_mutex_destroy(&evt->m);
-}
-
-static void LS_CLASS_FN ls_event_wait(struct event *evt)
-{
-    pthread_mutex_lock(&evt->m);
     while (!evt->signaled)
     {
-        pthread_cond_wait(&evt->c, &evt->m);
-        pthread_mutex_lock(&evt->m);
+        if (ms == LS_INFINITE)
+            rc = pthread_cond_wait(&evt->c, &evt->m);
+        else
+        {
+            ts.tv_sec = ms / 1000;
+            ts.tv_nsec = (ms % 1000) * 1000000;
+
+            rc = pthread_cond_timedwait(&evt->c, &evt->m, &ts);
+        }
+        
+        if (rc == ETIMEDOUT)
+        {
+            rc = 1;
+            break;
+        }
+        else if (rc != 0)
+        {
+            rc = -1;
+            break;
+        }
     }
+
     pthread_mutex_unlock(&evt->m);
-}
 
+    return rc;
 #endif // LS_WINDOWS
-
+}
 static const struct ls_class EventClass = {
 	.type = LS_EVENT,
 #if LS_WINDOWS

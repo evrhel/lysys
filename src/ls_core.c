@@ -16,14 +16,14 @@ static size_t _num_exit_hooks = 0;
 
 static struct ls_allocator _allocator = {0};
 
-void ls_init(const struct ls_allocator *allocator)
+int ls_init(const struct ls_allocator *allocator)
 {
 #if LS_WINDOWS
 	HRESULT hr;
 
 	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 	if (!SUCCEEDED(hr))
-		abort();
+		return -1;
 #endif // LS_WINDOWS
 
 	if (allocator == NULL)
@@ -35,7 +35,12 @@ void ls_init(const struct ls_allocator *allocator)
 			.free = free};
 	}
 	else
+	{
 		_allocator = *allocator;
+
+		if (_allocator.malloc == NULL || _allocator.calloc == NULL || _allocator.realloc == NULL || _allocator.free == NULL)
+			return -1;
+	}
 
 	_exit_hooks = NULL;
 	_num_exit_hooks = 0;
@@ -44,7 +49,10 @@ void ls_init(const struct ls_allocator *allocator)
     ls_init_pasteboard();
 #endif // LS_DARWIN
 
-	ls_set_epoch();
+	if (ls_set_epoch() == -1)
+		return -1;
+
+	return 0;
 }
 
 void ls_shutdown(void)
@@ -83,6 +91,12 @@ void ls_exit(int status)
 
 	ls_shutdown();
 	exit(status);
+}
+
+int ls_errno(void)
+{
+	// TODO: Implement
+	return 0;	
 }
 
 void *ls_malloc(size_t size)

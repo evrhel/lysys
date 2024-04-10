@@ -16,10 +16,12 @@ ls_handle ls_lock_create(void);
 //! \details Attempts to acquire the lock. If the lock is already held
 //! by another thread, the calling thread will block until the lock is
 //! available. If the calling thread already holds the lock, behavior
-//! is undefined.
+//! is undefined. That is, locks are not necessarily reentrant.
 //!
 //! \param [in] lock The lock to acquire.
-void ls_lock(ls_handle lock);
+//!
+//! \return 0 if the lock was acquired, or -1 if an error occurred.
+int ls_lock(ls_handle lock);
 
 //! \brief Attempt to acquire a lock.
 //! 
@@ -30,7 +32,8 @@ void ls_lock(ls_handle lock);
 //! 
 //! \param [in] lock The lock to attempt to acquire.
 //! 
-//! \return 0 if the lock was acquired, non-zero otherwise.
+//! \return 0 if the lock was acquired, 1 if the lock is already held,
+//! or -1 if an error occurred.
 int ls_trylock(ls_handle lock);
 
 //! \breif Release a lock.
@@ -55,24 +58,29 @@ ls_handle ls_cond_create(void);
 //! 
 //! \details The calling thread will block until the condition variable
 //! is signaled. The lock must be held by the calling thread when waiting
-//! on the condition variable.
+//! on the condition variable. Upon return, the lock will be held by the
+//! calling thread.
 //! 
 //! \param [in] cond The condition variable to wait on.
 //! \param [in] lock The lock to associate with the condition variable.
-void ls_cond_wait(ls_handle cond, ls_handle lock);
+//!
+//! \return 0 if the condition variable was signaled, -1 if an error
+//! occurred.
+int ls_cond_wait(ls_handle cond, ls_handle lock);
 
 //! \brief Wait on a condition variable with a timeout.
 //! 
 //! \details The calling thread will block until the condition variable
 //! is signaled or the timeout expires. The lock must be held by the
-//! calling thread when waiting on the condition variable.
+//! calling thread when waiting on the condition variable. Upon return,
+//! the lock will be held by the calling thread.
 //! 
 //! \param [in] cond The condition variable to wait on.
 //! \param [in] lock The lock to associate with the condition variable.
 //! \param [in] ms The timeout in milliseconds.
 //! 
-//! \return 0 if the condition variable was signaled, non-zero if the
-//! timeout expired.
+//! \return 0 if the condition variable was signaled, -1 if an error
+//! occurred, or 1 if the timeout expired.
 int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms);
 
 //! \brief Signal a condition variable.

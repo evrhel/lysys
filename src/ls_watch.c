@@ -368,15 +368,21 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 	struct timespec ts;
 	unsigned long remain = ms;
 	
-	pthread_mutex_lock(&w->lock);
-	
+	rc = pthread_mutex_lock(&w->lock);
+	if (rc == -1)
+		return -1;
+
+	rc = 0;
 	while (!w->front && w->running)
 	{
 		if (ms == LS_INFINITE)
 		{
-			pthread_cond_wait(&w->cond, &w->lock);
+			rc = pthread_cond_wait(&w->cond, &w->lock);
 			if (rc != 0)
-				return -1;
+			{
+				rc = -1;
+				break;
+			}
 		}
 		else
 		{
@@ -385,15 +391,21 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 
 			rc = pthread_cond_timedwait(&w->cond, &w->lock, &ts);
 			if (rc == ETIMEDOUT)
-				return 1;
+			{
+				rc = 1;
+				break;
+			}
 			else if (rc != 0)
-				return -1;
+			{
+				rc = -1;
+				break;
+			}
 		}
 	}
 
 	pthread_mutex_unlock(&w->lock);
 
-	return 0;
+	return rc;
 #endif // LS_WINDOWS
 }
 

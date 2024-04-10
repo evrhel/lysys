@@ -15,7 +15,7 @@ struct ls_allocator
 	void (*free)(void *ptr);
 };
 
-void ls_init(const struct ls_allocator *allocator);
+int ls_init(const struct ls_allocator *allocator);
 
 void ls_shutdown(void);
 
@@ -66,6 +66,15 @@ int ls_timedwait(ls_handle h, unsigned long ms);
 //! 
 //! \param [in] h The handle to close.
 void ls_close(ls_handle h);
+
+//! \brief Get the last error code.
+//!
+//! Returns the last error code that occurred on the calling thread.
+//! The error code is specific to the calling thread and is not shared
+//! between threads. The error code is reset after each function call.
+//!
+//! \return The last error code or 0 if no error occurred.
+int ls_errno(void);
 
 void *ls_malloc(size_t size);
 
