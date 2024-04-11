@@ -363,6 +363,19 @@ int ls_copy(const char *old_path, const char *new_path)
 	ls_free(lpOld);
 
 	return rc ? 0 : -1;
+#elif LS_DARWIN
+    int rc;
+    copyfile_state_t s;
+    
+    s = copyfile_state_alloc();
+    if (!s)
+        return -1;
+    
+    rc = copyfile(old_path, new_path, s, COPYFILE_STAT | COPYFILE_DATA);
+    
+    copyfile_state_free(s);
+    
+    return rc == 0 ? 0 : -1;
 #else
 	int src_fd, dst_fd;
 	ssize_t r;

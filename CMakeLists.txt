@@ -22,8 +22,10 @@ set(LYSYS_SOURCES
     ${src}/ls_time.c
     ${src}/ls_watch.c)
 
-if(APPLE)
-    list(APPEND LYSYS_SOURCES ${src}/ls_pasteboard.m)
+if (APPLE)
+    list(APPEND LYSYS_SOURCES
+        ${src}/ls_pasteboard.m
+        ${src}/ls_watch_darwin.m)
 endif()
 
 add_library(liblysys STATIC ${LYSYS_SOURCES})

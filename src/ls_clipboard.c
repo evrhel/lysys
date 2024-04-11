@@ -6,6 +6,10 @@
 
 #include "ls_native.h"
 
+#if LS_DARWIN
+#include "ls_pasteboard.h"
+#endif // LS_DARWIN
+
 intptr_t ls_register_clipboard_format(const char *name)
 {
 #if LS_WINDOWS

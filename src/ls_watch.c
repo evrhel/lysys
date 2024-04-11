@@ -13,17 +13,18 @@
 
 #if LS_WINDOWS
 #define NOTIF_BUFSIZE 1024
-#else
 
+#elif LS_DARWIN
+#include "ls_watch_darwin.h"
+
+#else
 #ifndef NAME_MAX
 #define NAME_MAX 255
 #endif // NAME_MAX
 
 #define NOTIF_BUFSIZE (sizeof(struct inotify_event) + NAME_MAX + 1)
 #define NOTIF_MINSIZE (sizeof(struct inotify_event))
-#endif // LS_WINDOWS
 
-#if LS_POSIX
 struct notif
 {
 	union
@@ -32,8 +33,10 @@ struct notif
 		char buf[NOTIF_BUFSIZE];
 	} u;
 };
-#endif // LS_POSIX
 
+#endif // LS_WINDOWS
+
+#if !LS_DARWIN
 struct ls_watch_event_imp
 {
 	int action;
@@ -47,6 +50,7 @@ struct ls_watch_event_imp
 #endif // LS_WINDOWS
 	struct ls_watch_event_imp *next;
 };
+#endif
 
 struct ls_watch
 {
@@ -67,6 +71,8 @@ struct ls_watch
 	char target[MAX_PATH];
 
 	struct ls_watch_event_imp *front, *back;
+#elif LS_DARWIN
+    ls_watch_darwin_t impl;
 #else
 	int notify; // inotify instance
 	int watch; // inotify watch
@@ -127,9 +133,7 @@ static int read_directory_changes(struct ls_watch *w)
 	return 0;
 }
 
-#endif // LS_WINDOWS
-
-#if LS_POSIX
+#elif !LS_DARWIN
 
 static ssize_t read_avail(struct ls_watch *w, void *buf, size_t n)
 {
@@ -314,13 +318,15 @@ static void *ls_watch_thread(void *arg)
 	return NULL;
 }
 
-#endif // LS_POSIX
+#endif // LS_WINDOWS
 
 static void LS_CLASS_FN ls_watch_dtor(struct ls_watch *w)
 {
 #if LS_WINDOWS
 	if (w->hDirectory && w->hDirectory != INVALID_HANDLE_VALUE)
 		CloseHandle(w->hDirectory);
+#elif LS_DARWIN
+    ls_watch_darwin_free(w->impl);
 #else
 	struct ls_watch_event_imp *e, *next;
 
@@ -363,10 +369,11 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 		return 1;
 	
 	return -1;
+#elif LS_DARWIN
+    return ls_watch_darwin_wait(w->impl, ms);
 #else
 	int rc;
 	struct timespec ts;
-	unsigned long remain = ms;
 	
 	rc = pthread_mutex_lock(&w->lock);
 	if (rc == -1)
@@ -386,8 +393,8 @@ static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
 		}
 		else
 		{
-			ts.tv_sec = remain / 1000;
-			ts.tv_nsec = (remain % 1000) * 1000000;
+			ts.tv_sec = ms / 1000;
+			ts.tv_nsec = (ms % 1000) * 1000000;
 
 			rc = pthread_cond_timedwait(&w->cond, &w->lock, &ts);
 			if (rc == ETIMEDOUT)
@@ -452,6 +459,21 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	}
 
 	return w;
+#elif LS_DARWIN
+    struct ls_watch *w;
+    
+    w = ls_handle_create(&WatchClass);
+    if (!w)
+        return NULL;
+    
+    w->impl = ls_watch_darwin_alloc(dir, recursive);
+    if (!w->impl)
+    {
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
+    return w;
 #else
 	struct ls_watch *w;
 	int rc;
@@ -553,6 +575,9 @@ int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
 	event->target = w->target[0] ? w->target : NULL;
 
 	return 0;
+#elif LS_DARWIN
+    struct ls_watch *w = watch;
+    return ls_watch_darwin_get_result(w->impl, event);
 #else
 	struct ls_watch *w = watch;
 	struct ls_watch_event_imp *e;

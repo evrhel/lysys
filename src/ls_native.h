@@ -49,24 +49,18 @@ LPWSTR ls_build_environment(const char *envp[]);
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/types.h>
-#include <sys/sendfile.h>
 #include <sys/time.h>
+
+#if LS_DARWIN
+#include <copyfile.h>
+#else
+#include <sys/sendfile.h>
 #include <sys/inotify.h>
+#endif // LS_DARWIN
 
 typedef int native_flags_t;
 
 #endif // LS_POSIX
-
-#if LS_DARWIN
-// ls_pasteboard.m
-int ls_init_pasteboard(void);
-void ls_deinit_pasteboard(void);
-intptr_t ls_register_pasteboard_format(const char *name);
-int ls_set_pasteboard_data(intptr_t fmt, const void *data, size_t cb);
-int ls_clear_pasteboard_data(void);
-size_t ls_get_pasteboard_data(intptr_t fmt, void *data, size_t cb);
-
-#endif // LS_DARWIN
 
 int ls_access_to_oflags(int access);
 int ls_create_to_oflags(int create);

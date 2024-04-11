@@ -11,6 +11,10 @@
 
 #include "ls_native.h"
 
+#if LS_DARWIN
+#include "ls_pasteboard.h"
+#endif // LS_DARWIN
+
 static ls_exit_hook_t *_exit_hooks = NULL;
 static size_t _num_exit_hooks = 0;
 
@@ -46,7 +50,8 @@ int ls_init(const struct ls_allocator *allocator)
 	_num_exit_hooks = 0;
     
 #if LS_DARWIN
-    ls_init_pasteboard();
+    if (ls_init_pasteboard() == -1)
+        return -1;
 #endif // LS_DARWIN
 
 	if (ls_set_epoch() == -1)

@@ -8,7 +8,7 @@
 #include <lysys/ls_sync.h>
 #include <lysys/ls_core.h>
 
-#include "ls_native.h"
+#include "ls_pasteboard.h"
 
 static NSMutableSet<NSString *> *_formats = nil;
 static ls_handle _lock = NULL; // lock on adding/reading, _formats cannot have items removed
