@@ -5,6 +5,7 @@
 #include <lysys/ls_core.h>
 
 #include <string.h>
+#include <stdlib.h>
 
 char *ls_strdir(const char *path)
 {
@@ -80,7 +81,24 @@ size_t ls_getenv_buf(const char *name, char *buf, size_t size)
 
 	return r - 1; // Exclude the null terminator
 #else
-	return 0;
+    const char *env;
+    size_t len;
+    
+    if (size == 0)
+        return 0;
+    
+    env = getenv(name);
+    if (!env)
+        return NULL;
+    
+    len = strlen(env);
+    if (len > size)
+        len = size - 1;
+    
+    memcpy(buf, env, len);
+    buf[len] = 0;
+    
+	return len;
 #endif // LS_WINDOWS
 }
 
@@ -117,7 +135,13 @@ char *ls_getenv(const char *name)
 
 	return ret;
 #else
-	return 0;
+    const char *env;
+    
+    env = getenv(name);
+    if (!env)
+        return NULL;
+    
+    return ls_strdup(env);
 #endif // LS_WINDOWS
 }
 
@@ -191,7 +215,40 @@ size_t ls_which(const char *path, char *buf, size_t size)
 
 	return r - 1; // Exclude the null terminator
 #else
-	return 0;
+    char *syspath, *string;
+    char *token;
+    int rc;
+    char fullpath[PATH_MAX];
+    size_t len = 0;
+    
+    if (size == 0)
+        return 0;
+    
+    syspath = ls_getenv("HOME");
+    if (!syspath)
+        return 0;
+    
+    string = syspath;
+    while ((token = strsep(&string, ":")) != NULL)
+    {
+        strncpy(fullpath, token, PATH_MAX);
+        strncat(fullpath, path, PATH_MAX);
+        
+        rc = access(fullpath, F_OK);
+        if (rc == 0)
+        {
+            len = strlen(fullpath);
+            if (len > size)
+                len = size - 1;
+            memcpy(buf, fullpath, len);
+            buf[len] = 0;
+            break;
+        }
+    }
+    
+    ls_free(syspath);
+    
+	return len;
 #endif // LS_WINDOWS
 }
 
@@ -208,7 +265,34 @@ size_t ls_abspath(const char *path, char *buf, size_t size)
 
 	return stLen - 1; // Exclude the null terminator
 #else
-	return 0;
+    size_t len;
+    char *wd;
+    
+    if (size == 0)
+        return 0;
+    
+    len = strlen(path);
+    if (len == 0)
+        return 0;
+    
+    if (path[0] == '/')
+    {
+        if (len > size)
+            len = size - 1;
+        memcpy(buf, path, len);
+        buf[len] = 0;
+        return len;
+    }
+    
+    wd = getcwd(buf, size);
+    if (!wd)
+        return 0;
+    
+    len = strlcat(buf, path, size);
+    if (len > size)
+        return size;
+    
+    return len;
 #endif // LS_WINDOWS
 }
 
