@@ -9,6 +9,10 @@
 #include <TlHelp32.h>
 #include <Shlwapi.h>
 #include <Shlobj.h>
+#include <Pdh.h>
+#include <PdhMsg.h>
+#include <strsafe.h>
+#include <Psapi.h>
 
 typedef DWORD native_flags_t;
 

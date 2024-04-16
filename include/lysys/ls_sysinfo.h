@@ -10,6 +10,11 @@
 #define LS_ARCH_X86 4
 #define LS_ARCH_IA64 5
 
+#define LS_BATTERY_UNKNOWN 0
+#define LS_BATTERY_NO_BATTERY 1
+#define LS_BATTERY_CHARGING 2
+#define LS_BATTERY_DISCHARGING 3
+
 struct ls_meminfo
 {
     uint64_t total;
@@ -22,8 +27,27 @@ struct ls_cpuinfo
     int num_cores;
 };
 
+struct ls_sysmetrics
+{
+    int cpu_usage;
+    uint64_t mem_usage; // In MiB
+
+    int gpu_usage;
+    uint64_t vram_usage; // In MiB
+};
+
+struct ls_batteryinfo
+{
+    int status;
+    int charge;
+};
+
 int ls_get_meminfo(struct ls_meminfo *mi);
 
 int ls_get_cpuinfo(struct ls_cpuinfo *ci);
+
+int ls_getmetrics(struct ls_sysmetrics *sm);
+
+int ls_get_batteryinfo(struct ls_batteryinfo *bi);
 
 #endif // _LS_INFO_H_

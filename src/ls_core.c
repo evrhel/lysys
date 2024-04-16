@@ -8,12 +8,16 @@
 #include <lysys/ls_time.h>
 #include <lysys/ls_sync.h>
 #include <lysys/ls_thread.h>
+#include <lysys/ls_sysinfo.h>
 
 #include "ls_native.h"
 
 #if LS_DARWIN
 #include "ls_pasteboard.h"
 #endif // LS_DARWIN
+
+extern int ls_init_sysinfo(void);
+extern void ls_deinit_sysinfo(void);
 
 static ls_exit_hook_t *_exit_hooks = NULL;
 static size_t _num_exit_hooks = 0;
@@ -57,11 +61,15 @@ int ls_init(const struct ls_allocator *allocator)
 	if (ls_set_epoch() == -1)
 		return -1;
 
+	(void)ls_init_sysinfo(); // optional feature
+
 	return 0;
 }
 
 void ls_shutdown(void)
 {
+	ls_deinit_sysinfo();
+
 #if LS_DARWIN
     ls_deinit_pasteboard();
 #endif // LS_DARWIN
