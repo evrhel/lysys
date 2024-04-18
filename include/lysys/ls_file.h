@@ -7,7 +7,11 @@
 #define LS_ASYNC_IO_RESERVED_SIZE 32 // 32 bytes for OVERLAPPED structure
 #else
 #define LS_ASYNC_IO_RESERVED_SIZE 0
-#endif
+#endif // LS_WINDOWS
+
+#define LS_STDIN ((ls_handle)1)
+#define LS_STDOUT ((ls_handle)2)
+#define LS_STDERR ((ls_handle)3)
 
 // File access modes
 

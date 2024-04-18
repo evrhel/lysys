@@ -14,12 +14,13 @@
 #include <strsafe.h>
 #include <Psapi.h>
 
+typedef HANDLE native_file_t;
 typedef DWORD native_flags_t;
 
 // at least Windows 2000
 #if WINVER < _WIN32_WINNT_WIN2K
 #error "Windows version too old"
-#endif
+#endif // WINVER
 
 // utf8 string to wchar_t string
 // returns number of characters written to buf, including null terminator
@@ -48,6 +49,7 @@ LPWSTR ls_build_environment(const char *envp[]);
 #include <pthread.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -62,6 +64,7 @@ LPWSTR ls_build_environment(const char *envp[]);
 #include <sys/inotify.h>
 #endif // LS_DARWIN
 
+typedef int native_file_t;
 typedef int native_flags_t;
 
 #endif // LS_POSIX
@@ -73,3 +76,5 @@ int ls_create_to_oflags(int create);
 
 native_flags_t ls_protect_to_flags(int protect);
 int ls_flags_to_protect(native_flags_t prot);
+
+native_file_t ls_resolve_file(ls_handle fh);

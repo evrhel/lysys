@@ -56,7 +56,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	else
 		liSize.QuadPart = size + offset;
 
-	hMap = CreateFileMappingW(file, NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
+	hMap = CreateFileMappingW(ls_resolve_file(file), NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
 	if (!hMap) return NULL;
 
 	lpView = MapViewOfFile(hMap, dwAccess, liOffset.HighPart, liOffset.LowPart, 0);
@@ -88,7 +88,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
     int fd;
     size_t *map_res;
 
-	fd = *(int *)file;
+	fd = ls_resolve_file(file);
     
     if (!map)
         return NULL;

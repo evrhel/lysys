@@ -348,3 +348,24 @@ int ls_flags_to_protect(native_flags_t prot)
     return protect;
 #endif // LS_WINDOWS
 }
+
+native_file_t ls_resolve_file(ls_handle fh)
+{
+#if LS_WINDOWS
+	switch ((intptr_t)fh)
+	{
+	case LS_STDIN: return GetStdHandle(STD_INPUT_HANDLE);
+	case LS_STDOUT: return GetStdHandle(STD_OUTPUT_HANDLE);
+	case LS_STDERR: return GetStdHandle(STD_ERROR_HANDLE);
+	default: return *(PHANDLE)fh;
+	}
+#else
+	switch ((intptr_t)fh)
+	{
+	case LS_STDIN: return 0;
+	case LS_STDOUT: return 1;
+	case LS_STDERR: return 2;
+	default: return *(int *)fh;
+	}
+#endif // LS_WINDOWS
+}
