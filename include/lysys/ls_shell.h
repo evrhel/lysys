@@ -31,4 +31,6 @@ size_t ls_relpath(const char *path, const char *base, char *buf, size_t size);
 
 size_t ls_realpath(const char *path, char *buf, size_t size);
 
+size_t ls_cwd(char *buf, size_t size);
+
 #endif // _LS_SHELL_H_

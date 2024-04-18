@@ -362,9 +362,9 @@ native_file_t ls_resolve_file(ls_handle fh)
 #else
 	switch ((intptr_t)fh)
 	{
-	case LS_STDIN: return 0;
-	case LS_STDOUT: return 1;
-	case LS_STDERR: return 2;
+	case (intptr_t)LS_STDIN: return 0;
+	case (intptr_t)LS_STDOUT: return 1;
+	case (intptr_t)LS_STDERR: return 2;
 	default: return *(int *)fh;
 	}
 #endif // LS_WINDOWS

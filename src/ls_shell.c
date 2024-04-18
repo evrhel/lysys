@@ -334,7 +334,35 @@ size_t ls_realpath(const char *path, char *buf, size_t size)
 
 	if (!r) return 0;
 
-	return ls_wchar_to_utf8_buf(szPath, buf, (int)size) - 1ULL; // Exclude the null terminator
+	return ls_wchar_to_utf8_buf(szPath, buf, (int)size) - 1; // Exclude the null terminator
+#else
+	return 0;
+#endif // LS_WINDOWS
+}
+
+size_t ls_cwd(char *buf, size_t size)
+{
+#if LS_WINDOWS
+	DWORD r;
+	WCHAR szBuf[MAX_PATH];
+
+	if (size == 0)
+		return 0;
+
+	if (!buf)
+	{
+		r = GetCurrentDirectoryW(0, NULL);
+		if (r == 0)
+			return 0;
+
+		return r - 1; // Exclude the null terminator
+	}
+
+	r = GetCurrentDirectoryW(MAX_PATH, szBuf);
+	if (r == 0)
+		return 0;
+
+	return ls_wchar_to_utf8_buf(szBuf, buf, (int)size) - 1; // Exclude the null terminator
 #else
 	return 0;
 #endif // LS_WINDOWS

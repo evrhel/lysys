@@ -172,3 +172,73 @@ void ls_yield(void)
 	sched_yield();
 #endif // LS_WINDOWS
 }
+
+struct ls_tls
+{
+#if LS_WINDOWS
+	DWORD dwTlsIndex;
+#else
+	pthread_key_t key;
+#endif // LS_WINDOWS
+};
+
+static void LS_CLASS_FN ls_tls_dtor(struct ls_tls *tls)
+{
+#if LS_WINDOWS
+	TlsFree(tls->dwTlsIndex);
+#else
+	// TODO: Implement
+#endif // LS_WINDOWS
+}
+
+static const struct ls_class TlsClass = {
+	.type = LS_TLS,
+	.cb = sizeof(struct ls_tls),
+	.dtor = (ls_dtor_t)&ls_tls_dtor,
+	.wait = NULL,
+};
+
+ls_handle ls_tls_create(void)
+{
+#if LS_WINDOWS
+	struct ls_tls *tls;
+
+	tls = ls_handle_create(&TlsClass);
+	if (!tls)
+		return NULL;
+
+	tls->dwTlsIndex = TlsAlloc();
+	if (tls->dwTlsIndex == TLS_OUT_OF_INDEXES)
+	{
+		ls_handle_dealloc(tls);
+		return NULL;
+	}
+
+	return tls;
+#else
+	// TODO: Implement
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+int ls_tls_set(ls_handle tlsh, void *value)
+{
+#if LS_WINDOWS
+	struct ls_tls *tls = tlsh;
+	return TlsSetValue(tls->dwTlsIndex, value) ? 0 : -1;
+#else
+	// TODO: Implement
+	return -1;
+#endif // LS_WINDOWS
+}
+
+void *ls_tls_get(ls_handle tlsh)
+{
+#if LS_WINDOWS
+	struct ls_tls *tls = tlsh;
+	return TlsGetValue(tls->dwTlsIndex);
+#else
+	// TODO: Implement
+	return NULL;
+#endif // LS_WINDOWS
+}

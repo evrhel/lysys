@@ -18,6 +18,7 @@
 #define LS_PIPE (8 | LS_WAITABLE | LS_READABLE | LS_WRITABLE)
 #define LS_EVENT (9 | LS_WAITABLE)
 #define LS_WATCH (10 | LS_WAITABLE)
+#define LS_TLS 11
 
 #if LS_WINDOWS
 #define LS_CLASS_FN __stdcall

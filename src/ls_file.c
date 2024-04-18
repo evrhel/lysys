@@ -266,9 +266,9 @@ size_t ls_write(ls_handle file, const void *buffer, size_t size,
 int ls_flush(ls_handle file)
 {
 #if LS_WINDOWS
-	return FlushFileBuffers(ls_resolve_handle(file)) ? 0 : -1;
+	return FlushFileBuffers(ls_resolve_file(file)) ? 0 : -1;
 #else
-	return fsync(*(int *)file);
+	return fsync(ls_resolve_file(file));
 #endif // LS_WINDOWS
 }
 
