@@ -6,71 +6,53 @@
 
 #include "ls_native.h"
 #include "ls_handle.h"
+#include "ls_sync_util.h"
 
 struct event
 {
 #if LS_WINDOWS
     HANDLE hEvent;
 #else
-    pthread_mutex_t m;
-    pthread_cond_t c;
+    ls_lock_t lock;
+    ls_cond_t cond;
     int signaled;
 #endif // LS_WINDOWS
 };
 
-static void LS_CLASS_FN ls_event_dtor(struct event *evt)
+static void ls_event_dtor(struct event *evt)
 {
 #if LS_WINDOWS
     CloseHandle(evt->hEvent);
 #else
-    pthread_cond_destroy(&evt->c);
-    pthread_mutex_destroy(&evt->m);
+    cond_destroy(&evt->cond);
+    lock_destroy(&evt->lock);
 #endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_event_wait(struct event *evt, unsigned long ms)
+static int ls_event_wait(struct event *evt, unsigned long ms)
 {
 #if LS_WINDOWS
     DWORD dwResult;
 
 	dwResult = WaitForSingleObject(evt->hEvent, ms);
-	if (dwResult == WAIT_OBJECT_0) return 0;
-    if (dwResult == WAIT_TIMEOUT) return 1;
 
-	return -1;
+	if (dwResult == WAIT_OBJECT_0)
+        return 0;
+
+    if (dwResult == WAIT_TIMEOUT)
+        return 1;
+
+	return ls_set_errno_win32(GetLastError());
 #else
     int rc;
     struct timespec ts;
 
-    rc = pthread_mutex_lock(&evt->m);
-    if (rc != 0)
-        return -1;
+    lock_lock(&evt->lock);
 
     while (!evt->signaled)
-    {
-        if (ms == LS_INFINITE)
-            rc = pthread_cond_wait(&evt->c, &evt->m);
-        else
-        {
-            ts.tv_sec = ms / 1000;
-            ts.tv_nsec = (ms % 1000) * 1000000;
+        cond_wait(&evt->cond, &evt->lock, ms);
 
-            rc = pthread_cond_timedwait(&evt->c, &evt->m, &ts);
-        }
-        
-        if (rc == ETIMEDOUT)
-        {
-            rc = 1;
-            break;
-        }
-        else if (rc != 0)
-        {
-            rc = -1;
-            break;
-        }
-    }
-
-    pthread_mutex_unlock(&evt->m);
+    lock_unlock(&evt->lock);
 
     return rc;
 #endif // LS_WINDOWS
@@ -89,28 +71,42 @@ static const struct ls_class EventClass = {
 ls_handle ls_event_create(void)
 {
 #if LS_WINDOWS
-	PHANDLE phEvent;
-	phEvent = ls_handle_create(&EventClass);
-	if (!phEvent) return NULL;
-	*phEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-	return !*phEvent ? (ls_close(phEvent), NULL) : phEvent;
+    PHANDLE phEvent;
+	HANDLE hEvent;
+
+    phEvent = ls_handle_create(&EventClass);
+	if (!phEvent)
+        return NULL;
+
+	hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (!hEvent)
+    {
+        ls_set_errno_win32(GetLastError());
+        ls_handle_dealloc(hEvent);
+        return NULL;
+    }
+
+    *phEvent = hEvent;
+    return phEvent;
 #else
     struct event *evt;
     int rc;
-    evt = ls_handle_create(&EventClass);
-    if (!evt) return NULL;
 
-    rc = pthread_mutex_init(&evt->m, NULL);
+    evt = ls_handle_create(&EventClass);
+    if (!evt)
+        return NULL;
+
+    rc = lock_init(&evt->lock);
     if (rc != 0)
     {
         ls_handle_dealloc(evt);
         return NULL;
     }
     
-    rc = pthread_cond_init(&evt->c, NULL);
+    rc = cond_init(&evt->cond);
     if (rc != 0)
     {
-        pthread_mutex_destroy(&evt->m);
+        lock_destroy(&evt->lock);
         ls_handle_dealloc(evt);
         return NULL;
     }
@@ -122,14 +118,22 @@ ls_handle ls_event_create(void)
 int ls_event_signaled(ls_handle evt)
 {
 #if LS_WINDOWS
-	return WaitForSingleObject(*(PHANDLE)evt, 0) == WAIT_OBJECT_0;
+    PHANDLE phEvent = evt;
+
+    if (!phEvent)
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+
+    return WaitForSingleObject(*phEvent, 0) == WAIT_OBJECT_0;
 #else
     struct event *event = evt;
     int rc;
+
+    if (!evt)
+        return ls_set_errno(LS_INVALID_HANDLE);
     
-    pthread_mutex_lock(&event->m);
+    lock_lock(&event->lock);
     rc = event->signaled;
-    pthread_mutex_unlock(&event->m);
+    lock_unlock(&event->lock);
     
     return rc;
 #endif // LS_WINDOWS
@@ -138,14 +142,27 @@ int ls_event_signaled(ls_handle evt)
 int ls_event_set(ls_handle evt)
 {
 #if LS_WINDOWS
-	return !SetEvent(*(PHANDLE)evt);
+    BOOL b;
+    PHANDLE phEvent = evt;
+
+    if (!phEvent)
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	b = SetEvent(*phEvent);
+    if (!b)
+        return ls_set_errno_win32(GetLastError());
+    return 0;
 #else
     struct event *event = evt;
     int rc;
+
+    if (!evt)
+        return ls_set_errno(LS_INVALID_HANDLE);
     
-    pthread_mutex_lock(&event->m);
+    lock_lock(&event->lock);
     event->signaled = 1;
-    pthread_mutex_unlock(&event->m);
+    cond_broadcast(&event->cond);
+    lock_unlock(&event->lock);
     
     return 0;
 #endif // LS_WINDOWS
@@ -154,14 +171,26 @@ int ls_event_set(ls_handle evt)
 int ls_event_reset(ls_handle evt)
 {
 #if LS_WINDOWS
-	return !ResetEvent(*(PHANDLE)evt);
+    BOOL b;
+    PHANDLE phEvent = evt;
+
+    if (!phEvent)
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+
+    b = ResetEvent(*phEvent);
+    if (!b)
+        return ls_set_errno_win32(GetLastError());
+    return 0;
 #else
     struct event *event = evt;
     int rc;
+
+    if (!evt)
+        return ls_set_errno(LS_INVALID_HANDLE);
     
-    pthread_mutex_lock(&event->m);
+    lock_lock(&event->lock);
     event->signaled = 0;
-    pthread_mutex_unlock(&event->m);
+    lock_unlock(&event->lock);
     
     return 0;
 #endif // LS_WINDOWS

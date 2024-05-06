@@ -1,4 +1,4 @@
-#include "ls_native.h"
+#include <lysys/ls_time.h>
 
 #include <time.h>
 #include <math.h>
@@ -6,34 +6,27 @@
 #include <lysys/ls_time.h>
 #include <lysys/ls_defs.h>
 
+#include "ls_native.h"
+
+#define NS_PER_SEC 1000000000LL
+#define NS_PER_MS 1000000LL
+
 #if LS_WINDOWS
-static LARGE_INTEGER _li_freq = { .QuadPart = 0 };
-static LARGE_INTEGER _li_start = { .QuadPart = 0 };
-#else
-static struct timespec _ts_start = { .tv_sec = 0, .tv_nsec = 0 };
+static LARGE_INTEGER li_freq = { 0 };
 #endif // LS_WINDOWS
 
-int ls_set_epoch(void)
-{
-#if LS_WINDOWS
-	QueryPerformanceFrequency(&_li_freq);
-	QueryPerformanceCounter(&_li_start);
-	return 0;
-#else
-	return clock_gettime(CLOCK_MONOTONIC, &_ts_start);
-#endif // LS_WINDOWS
-}
-
-long long ls_nano_time(void)
+long long ls_nanotime(void)
 {
 #if LS_WINDOWS
 	LARGE_INTEGER li;
-	QueryPerformanceCounter(&li);
-	return (li.QuadPart - _li_start.QuadPart) * 1000000000LL / _li_freq.QuadPart;
+	if (li_freq.QuadPart == 0)
+		(void)QueryPerformanceFrequency(&li_freq);
+	(void)QueryPerformanceCounter(&li);
+	return li.QuadPart * (NS_PER_SEC / li_freq.QuadPart);
 #else
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (ts.tv_sec - _ts_start.tv_sec) * 1000000000LL + ts.tv_nsec - _ts_start.tv_nsec;
+	return ts.tv_sec * NS_PER_SEC + ts.tv_nsec;
 #endif // LS_WINDOWS
 }
 
@@ -41,12 +34,14 @@ double ls_time64(void)
 {
 #if LS_WINDOWS
 	LARGE_INTEGER li;
-	QueryPerformanceCounter(&li);
-	return (double)(li.QuadPart - _li_start.QuadPart) / _li_freq.QuadPart;
+	if (li_freq.QuadPart == 0)
+		(void)QueryPerformanceFrequency(&li_freq);
+	(void)QueryPerformanceCounter(&li);
+	return (double)li.QuadPart / li_freq.QuadPart;
 #else
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (double)(ts.tv_sec - _ts_start.tv_sec) + (double)ts.tv_nsec / 1000000000.0;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	return (double)ts.tv_sec + (double)ts.tv_nsec / NS_PER_SEC;
 #endif // LS_WINDOWS
 }
 
@@ -130,7 +125,7 @@ static void ls_sleep_ts(struct timespec *ts)
 		*ts = rem;
 	}
 }
-#endif //
+#endif // LS_POSIX
 
 void ls_sleep(unsigned long ms)
 {
@@ -152,25 +147,28 @@ void ls_nanosleep(long long ns)
 	LARGE_INTEGER li_start, li_now;
 	__int64 i64_end, i64_sleep_time;
 
-	QueryPerformanceCounter(&li_start);
+	if (li_freq.QuadPart == 0)
+		(void)QueryPerformanceFrequency(&li_freq);
 
-	i64_sleep_time = ns / 1000000LL - 1;
+	(void)QueryPerformanceCounter(&li_start);
+
+	i64_sleep_time = ns / NS_PER_MS - 1;
 	if (i64_sleep_time > 0)
 		Sleep((DWORD)i64_sleep_time);
 
-	QueryPerformanceCounter(&li_now);
+	(void)QueryPerformanceCounter(&li_now);
 
-	ns -= (li_now.QuadPart - li_start.QuadPart) * 1000000000LL / _li_freq.QuadPart;
+	ns -= (li_now.QuadPart - li_start.QuadPart) * (NS_PER_SEC / li_freq.QuadPart);
 
-	i64_end = li_now.QuadPart + ns * _li_freq.QuadPart / 1000000000LL;
+	i64_end = li_now.QuadPart + ns * (li_freq.QuadPart / NS_PER_SEC);
 
 	while (li_now.QuadPart < i64_end)
-		QueryPerformanceCounter(&li_now);
+		(void)QueryPerformanceCounter(&li_now);
 #else
 	struct timespec ts;
 
-	ts.tv_sec = ns / 1000000000LL;
-	ts.tv_nsec = ns % 1000000000LL;
+	ts.tv_sec = ns / NS_PER_SEC;
+	ts.tv_nsec = ns % NS_PER_SEC;
 
 	ls_sleep_ts(&ts);
 #endif // LS_WINDOWS

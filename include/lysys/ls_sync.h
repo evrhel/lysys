@@ -13,33 +13,31 @@ ls_handle ls_lock_create(void);
 
 //! \brief Acquire a lock.
 //! 
-//! \details Attempts to acquire the lock. If the lock is already held
-//! by another thread, the calling thread will block until the lock is
-//! available. If the calling thread already holds the lock, behavior
-//! is undefined. That is, locks are not necessarily reentrant.
+//! \details Acquires the lock. If the lock is already held by another
+//! thread, the calling thread will block until the lock is available.
+//! If the calling thread already holds the lock, behavior is undefined.
+//! If the lock is NULL or invalid, behavior is undefined.
 //!
 //! \param [in] lock The lock to acquire.
-//!
-//! \return 0 if the lock was acquired, or -1 if an error occurred.
-int ls_lock(ls_handle lock);
+void ls_lock(ls_handle lock);
 
 //! \brief Attempt to acquire a lock.
 //! 
 //! \details Attempts to acquire the lock. If the lock is already held
 //! by another thread, the calling thread will return immediately with
 //! a failure. If the calling thread already holds the lock, behavior
-//! is undefined.
+//! is undefined. If the lock is NULL or invalid, behavior is undefined.
 //! 
 //! \param [in] lock The lock to attempt to acquire.
 //! 
-//! \return 0 if the lock was acquired, 1 if the lock is already held,
-//! or -1 if an error occurred.
+//! \return 0 if the lock was acquired, 1 if the lock is already held.
 int ls_trylock(ls_handle lock);
 
 //! \breif Release a lock.
 //! 
 //! \details Releases the lock. If the lock is not held by the calling
-//! thread, behavior is undefined.
+//! thread, behavior is undefined. If the lock is NULL or invalid,
+//! behavior is undefined.
 //! 
 //! \param [in] lock The lock to release.
 void ls_unlock(ls_handle lock);
@@ -59,28 +57,26 @@ ls_handle ls_cond_create(void);
 //! \details The calling thread will block until the condition variable
 //! is signaled. The lock must be held by the calling thread when waiting
 //! on the condition variable. Upon return, the lock will be held by the
-//! calling thread.
+//! calling thread. If cond or lock is NULL or invalid, behavior is undefined.
 //! 
 //! \param [in] cond The condition variable to wait on.
 //! \param [in] lock The lock to associate with the condition variable.
-//!
-//! \return 0 if the condition variable was signaled, -1 if an error
-//! occurred.
-int ls_cond_wait(ls_handle cond, ls_handle lock);
+void ls_cond_wait(ls_handle cond, ls_handle lock);
 
 //! \brief Wait on a condition variable with a timeout.
 //! 
 //! \details The calling thread will block until the condition variable
 //! is signaled or the timeout expires. The lock must be held by the
 //! calling thread when waiting on the condition variable. Upon return,
-//! the lock will be held by the calling thread.
+//! the lock will be held by the calling thread. If cond or lock is NULL
+//! or invalid, behavior is undefined.
 //! 
 //! \param [in] cond The condition variable to wait on.
 //! \param [in] lock The lock to associate with the condition variable.
 //! \param [in] ms The timeout in milliseconds.
 //! 
-//! \return 0 if the condition variable was signaled, -1 if an error
-//! occurred, or 1 if the timeout expired.
+//! \return 0 if the condition variable was signaled or 1 if the timeout
+//! expired.
 int ls_cond_timedwait(ls_handle cond, ls_handle lock, unsigned long ms);
 
 //! \brief Signal a condition variable.

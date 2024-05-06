@@ -7,16 +7,19 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <memory.h>
 
 #include "ls_handle.h"
 #include "ls_native.h"
+#include "ls_sync_util.h"
 
 #if LS_WINDOWS
-#define NOTIF_BUFSIZE 1024
+#define NOTIF_FILTER (FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SECURITY)
+#define NOTIF_MAXSIZE (offsetof(FILE_NOTIFY_EXTENDED_INFORMATION, FileName) + MAX_PATH * sizeof(WCHAR))
+#define NOTIF_BUFSIZE 2048 // must be at least NOTIF_MAXSIZE*2
+#define BACKLOG 10
 
 #elif LS_DARWIN
-#include "ls_watch_darwin.h"
-
 #else
 #ifndef NAME_MAX
 #define NAME_MAX 255
@@ -36,61 +39,58 @@ struct notif
 
 #endif // LS_WINDOWS
 
-#if !LS_DARWIN
 struct ls_watch_event_imp
 {
-	int action;
-
-#if LS_WINDOWS
-	char source[MAX_PATH];
-	char target[MAX_PATH];
-#else
-	char *source;
-	char *target;
-#endif // LS_WINDOWS
-	struct ls_watch_event_imp *next;
+    struct ls_watch_event_imp *next;
+    size_t cb; // size of event
+    struct ls_watch_event event;
 };
-#endif
 
 struct ls_watch
 {
 #if LS_WINDOWS
+	OVERLAPPED ov; // THIS MUST BE FIRST!
+
 	HANDLE hDirectory;
-	OVERLAPPED ov;
-	HANDLE hThread; // thread that created this watch
+	HANDLE hThread;
 
-	int recursive;
+	ls_lock_t lock;
+	ls_cond_t cond;
 
-	union
-	{
-		FILE_NOTIFY_EXTENDED_INFORMATION fnei;
-		BYTE buf[NOTIF_BUFSIZE];
-	} u;
+	int error; // error code
+	int avail; // number of events available
 
-	char source[MAX_PATH];
-	char target[MAX_PATH];
+	BYTE buf[NOTIF_BUFSIZE];
+	DWORD dwTransferred;
+
+	int flags;
 
 	struct ls_watch_event_imp *front, *back;
 #elif LS_DARWIN
-    ls_watch_darwin_t impl;
+    FSEventStreamRef stream;
+    dispatch_queue_t queue;
+    ls_lock_t lock;
+    ls_cond_t cond;
+    
+    int flags;
+    
+    int error;
+    
+    struct ls_watch_event_imp *front, *back;
 #else
 	int notify; // inotify instance
 	int watch; // inotify watch
 
-	int recursive;
+	int flags;
 
 	pthread_t thread; // thread that created this watch
-	volatile int stop; // stop flag
-	volatile int running;
+	int error;
 
-	pthread_mutex_t lock;
-	pthread_cond_t cond;
+	ls_lock_t lock;
+	ls_cond_t cond;
 
 	char avail[NOTIF_BUFSIZE];
 	size_t avail_size;
-
-	char source[NAME_MAX];
-	char target[NAME_MAX];
 
 	struct ls_watch_event_imp *front, *back;
 #endif // LS_WINDOWS
@@ -98,42 +98,313 @@ struct ls_watch
 
 #if LS_WINDOWS
 
-static int dispatch_next_read(struct ls_watch *w)
+// w->cs must be held
+// set w->error before calling
+static void ls_watch_emit_error(struct ls_watch *w)
 {
-	BOOL b;
+	assert(w->error != 0);
 
-	b = ReadDirectoryChangesExW(
-		w->hDirectory,
-		w->u.buf,
-		NOTIF_BUFSIZE,
-		w->recursive,
-		FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_ATTRIBUTES | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_CREATION | FILE_NOTIFY_CHANGE_SECURITY,
-		NULL,
-		&w->ov,
-		NULL,
-		ReadDirectoryNotifyExtendedInformation);
-	
-	return b ? 0 : -1;
+	if (w->avail == -1)
+		return;	
+
+	w->avail = -1;
+	cond_broadcast(&w->cond);
 }
 
-static int read_directory_changes(struct ls_watch *w)
+// includes null terminator
+static char *ls_extract_name(PFILE_NOTIFY_EXTENDED_INFORMATION pNotify, size_t *len)
 {
-	DWORD dwRet;
-	DWORD dwBytes;
+	WCHAR szName[MAX_PATH];
+	char *name;
+	size_t name_len;
 
-	dwRet = GetOverlappedResult(w->hDirectory, &w->ov, &dwBytes, FALSE);
-	if (!dwRet)
+	if (pNotify->FileNameLength >= sizeof(szName) - sizeof(WCHAR))
 	{
-		if (ERROR_IO_INCOMPLETE == GetLastError())
-			return 1;
+		ls_set_errno(LS_BUFFER_TOO_SMALL);
+		return NULL;
+	}
 
-		return -1;
+	memcpy(szName, pNotify->FileName, pNotify->FileNameLength);
+	szName[pNotify->FileNameLength / sizeof(WCHAR)] = L'\0';
+
+	// determine required buffer size
+	name_len = ls_wchar_to_utf8_buf(szName, NULL, 0);
+	if (name_len == -1)
+		return NULL;
+
+	name = ls_malloc(name_len);
+	if (!name)
+		return NULL;
+
+	// convert name
+	name_len = ls_wchar_to_utf8_buf(szName, name, name_len);
+	if (name_len == -1)
+	{
+		ls_free(name);
+		return NULL;
+	}
+
+	*len = name_len + 1;
+	return name;
+}
+
+// w->cs must be held
+static void ls_enqueue_events(struct ls_watch *w)
+{
+	PFILE_NOTIFY_EXTENDED_INFORMATION pNotify, pNext;
+	struct ls_watch_event_imp *e = NULL;
+	size_t cb;
+
+	char *first = NULL, *second = NULL;
+	size_t first_len, second_len;
+
+	_ls_errno = 0;
+
+	if (w->avail == -1)
+		return; // dont enqueue events if we are shutting down
+
+	pNotify = (PFILE_NOTIFY_EXTENDED_INFORMATION)w->buf;
+	pNext = (PFILE_NOTIFY_EXTENDED_INFORMATION)(w->buf + pNotify->NextEntryOffset);
+
+	// convert names to null-terminated utf-8 strings
+
+	first = ls_extract_name(pNotify, &first_len);
+	if (!first)
+		goto failure;
+
+	// if NextEntryOffset is non-zero, there is a second notification
+	if (pNotify->NextEntryOffset)
+	{
+		second = ls_extract_name(pNext, &second_len);
+		if (!second)
+			goto failure;
+	}
+	else
+		second_len = 0;
+	
+	cb = offsetof(struct ls_watch_event_imp, event.filename) + first_len + second_len;
+	e = ls_calloc(1, cb);
+	if (!e)
+		goto failure;
+	e->cb = cb;
+
+	// populate event
+	switch (pNotify->Action)
+	{
+	case FILE_ACTION_ADDED:
+		if (second)
+			goto failure;
+		e->event.type = LS_WATCH_ADD;
+		memcpy(e->event.filename, first, first_len);
+		break;
+	case FILE_ACTION_REMOVED:
+		if (second)
+			goto failure;
+		e->event.type = LS_WATCH_REMOVE;
+		memcpy(e->event.filename, first, first_len);
+		break;
+	case FILE_ACTION_MODIFIED:
+		if (second)
+			goto failure;
+		e->event.type = LS_WATCH_MODIFY;
+		memcpy(e->event.filename, first, first_len);
+		break;
+	case FILE_ACTION_RENAMED_OLD_NAME:
+		if (!second)
+			goto failure;
+		e->event.type = LS_WATCH_RENAME;
+		e->event.old_name = second_len;
+		memcpy(e->event.filename, second, second_len);
+		memcpy(e->event.filename + second_len, first, first_len);
+		break;
+	case FILE_ACTION_RENAMED_NEW_NAME:
+		if (!second)
+			goto failure;
+		e->event.type = LS_WATCH_RENAME;
+		e->event.old_name = first_len;
+		memcpy(e->event.filename, first, first_len);
+		memcpy(e->event.filename + first_len, second, second_len);
+		break;
+	default:
+		w->error = LS_INVALID_STATE;
+		goto failure;
+	}
+
+	free(first), first = NULL;
+	free(second), second = NULL;
+
+	// add event to queue
+	if (w->front)
+	{
+		w->back->next = e;
+		w->back = e;
+	}
+	else
+	{
+		w->front = e;
+		w->back = e;
+	}
+
+	// notify waiting threads
+	w->avail++;
+	cond_signal(&w->cond);
+
+	return;
+failure:
+	if (!w->error)
+	{
+		w->error = _ls_errno;
+		if (!w->error)
+			w->error = LS_INVALID_STATE;
+	}
+
+	ls_free(first);
+	ls_free(second);
+	ls_free(e);
+	ls_watch_emit_error(w);
+}
+
+static void ls_completion_routine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+{
+	struct ls_watch *w;
+	BOOL b;
+
+	w = (struct ls_watch *)lpOverlapped;
+
+	lock_lock(&w->lock);
+
+	// TODO: should we do this?
+	// SetEvent(w->ov.hEvent);
+
+	if (dwErrorCode != ERROR_SUCCESS)
+	{
+		w->error = win32_to_error(dwErrorCode);
+		ls_watch_emit_error(w);
+		lock_unlock(&w->lock);
+		return;
+	}
+	
+	b = GetOverlappedResult(w->hDirectory, lpOverlapped, &w->dwTransferred, FALSE);
+	if (b)
+	{
+		ls_enqueue_events(w);
+		lock_unlock(&w->lock);
+		return;
+	}
+		
+	w->error = win32_to_error(GetLastError());
+	ls_watch_emit_error(w);
+
+	lock_unlock(&w->lock);
+}
+
+static DWORD CALLBACK ls_watch_worker(LPVOID lpParam)
+{
+	struct ls_watch *w;
+	BOOL b;
+	DWORD dwResult;
+	DWORD dwErr;
+	
+	w = lpParam;
+
+	for (;;)
+	{
+		ResetEvent(w->ov.hEvent);
+
+		// queue next read
+		b = ReadDirectoryChangesExW(
+			w->hDirectory,
+			w->buf,
+			NOTIF_BUFSIZE,
+			!!(w->flags & LS_WATCH_FLAG_RECURSIVE),
+			NOTIF_FILTER,
+			NULL,
+			&w->ov,
+			&ls_completion_routine,
+			ReadDirectoryNotifyExtendedInformation);
+		if (!b)
+		{
+			dwErr = GetLastError();
+			if (dwErr != ERROR_IO_PENDING)
+			{
+				if (dwErr == ERROR_NOTIFY_ENUM_DIR)
+				{
+					// TODO: need to traverse directory manually
+					lock_lock(&w->lock);
+					w->error = LS_NOT_IMPLEMENTED;
+					ls_watch_emit_error(w);
+					lock_unlock(&w->lock);
+					break;
+				}
+
+				lock_lock(&w->lock);
+				w->error = win32_to_error(dwErr);
+				ls_watch_emit_error(w);
+				lock_unlock(&w->lock);
+				break;
+			}
+		}
+
+		// alertable wait for I/O completion
+		dwResult = WaitForSingleObjectEx(w->ov.hEvent, INFINITE, TRUE);	
+		dwErr = GetLastError();
+
+		lock_lock(&w->lock);
+
+		switch (dwResult)
+		{
+		case WAIT_IO_COMPLETION:
+			break; // handled by completion routine
+		case WAIT_FAILED:
+			w->error = win32_to_error(dwErr);
+			ls_watch_emit_error(w);
+			break;
+		case WAIT_TIMEOUT:
+			w->error = LS_TIMEDOUT;
+			ls_watch_emit_error(w);
+			break;
+		default:
+			w->error = LS_INVALID_STATE;
+			ls_watch_emit_error(w);
+			break;
+		}
+
+		// check if we should exit
+		if (w->avail == -1)
+		{
+			lock_unlock(&w->lock);
+			break;
+		}
+
+		lock_unlock(&w->lock);
 	}
 
 	return 0;
 }
 
-#elif !LS_DARWIN
+#elif LS_DARWIN
+
+static void ls_on_fs_event(ConstFSEventStreamRef streamRef, void *clientCallBackInfo,
+    size_t numEvents, void *eventPaths, const FSEventStreamEventFlags *eventFlags,
+    const FSEventStreamEventId *eventIds)
+{
+    struct ls_watch *w = clientCallBackInfo;
+    size_t i;
+	char **paths = eventPaths;
+    
+    for (i = 0; i < numEvents; i++)
+    {
+        // TODO: need to find the actual change
+    }
+    
+    // TODO: remove when implemented
+    lock_lock(&w->lock);
+    w->error = LS_NOT_IMPLEMENTED;
+    cond_broadcast(&w->cond);
+    lock_unlock(&w->lock);
+}
+
+#else
 
 static ssize_t read_avail(struct ls_watch *w, void *buf, size_t n)
 {
@@ -196,19 +467,20 @@ static ssize_t read_event(struct ls_watch *w, struct notif *pn)
 static void *ls_watch_thread(void *arg)
 {
 	struct ls_watch *w = arg;
-	struct notif n;
+	struct notif n, n2;
 	ssize_t bytes_read;
-	struct ls_watch_event_imp *e = NULL;
+	struct ls_watch_event_imp *e = NULL, *tmp;
+	size_t cb;
 
 	for (;;)
 	{
-		pthread_mutex_lock(&w->lock);
-		if (w->stop)
+		lock_lock(&w->lock);
+		if (w->error)
 		{
-			pthread_mutex_unlock(&w->lock);
+			lock_unlock(&w->lock);
 			break;
 		}
-		pthread_mutex_unlock(&w->lock);
+		lock_unlock(&w->lock);
 
 		bytes_read = read_event(w, &n);
 		if (bytes_read <= 0)
@@ -218,63 +490,64 @@ static void *ls_watch_thread(void *arg)
 		if (!n.u.ie.len)
 			break;
 
-		e = ls_calloc(1, sizeof(struct ls_watch_event_imp));
+		cb = sizeof(struct ls_watch_event_imp) + n.u.ie.len;
+		e = ls_calloc(1, cb);
 		if (!e)
 			break;
 		
 		if (n.u.ie.mask & IN_CREATE)
 		{
-			e->action = LS_WATCH_ADD;
-			e->source = ls_strdup(n.u.ie.name);
-			if (!e->source)
-				break;
+			e->event.type = LS_WATCH_ADD;
+			memcpy(e->event.filename, n.u.ie.name, n.u.ie.len);
 		}
 		else if (n.u.ie.mask & IN_DELETE)
 		{
-			e->action = LS_WATCH_REMOVE;
-			e->source = ls_strdup(n.u.ie.name);
-			if (!e->source)
-				break;
+			e->event.type = LS_WATCH_REMOVE;
+			memcpy(e->event.filename, n.u.ie.name, n.u.ie.len);
 		}
 		else if (n.u.ie.mask & IN_MODIFY)
 		{
-			e->action = LS_WATCH_MODIFY;
-			e->source = ls_strdup(n.u.ie.name);
-			if (!e->source)
-				break;
+			e->event.type = LS_WATCH_MODIFY;
+			memcpy(e->event.filename, n.u.ie.name, n.u.ie.len);
 		}
 		else if (n.u.ie.mask & IN_MOVE)
 		{
-			e->action = LS_WATCH_RENAME;
-			if (n.u.ie.mask & IN_MOVED_FROM)
-			{
-				e->source = ls_strdup(n.u.ie.name);
-				if (!e->source)
-					break;
-			}
-			else
-			{
-				e->source = ls_strdup(n.u.ie.name);
-				if (!e->source)
-					break;
-			}
-
-			bytes_read = read_event(w, &n);
+			bytes_read = read_event(w, &n2);
 			if (bytes_read <= 0)
+				ls_free(e), e = NULL;
+
+			cb = sizeof(struct ls_watch_event_imp) + n.u.ie.len + n2.u.ie.len;
+			tmp = ls_realloc(e, cb);
+			if (!tmp)
 				break;
+			e = tmp, tmp = NULL;
+
+			e->event.type = LS_WATCH_RENAME;
 
 			if (n.u.ie.mask & IN_MOVED_FROM)
 			{
-				e->target = ls_strdup(n.u.ie.name);
-				if (!e->target)
-					break;
+				if (n2.u.ie.mask & IN_MOVED_TO)
+				{
+					memcpy(e->event.filename, n.u.ie.name, n.u.ie.len);
+					memcpy(e->event.filename + n.u.ie.len, n2.u.ie.name, n2.u.ie.len);
+					e->event.old_name = n.u.ie.len;
+				}
+				else
+					ls_free(e), e = NULL;
+			}
+			else if (n.u.ie.mask & IN_MOVED_TO)
+			{
+				if (n2.u.ie.mask & IN_MOVED_TO)
+				{
+					memcpy(e->event.filename, n2.u.ie.name, n2.u.ie.len);
+					memcpy(e->event.filename + n2.u.ie.len, n.u.ie.name, n.u.ie.len);
+					e->event.old_name = n2.u.ie.len;
+				}
+				else
+					ls_free(e), e = NULL;
 			}
 			else
-			{
-				e->target = ls_strdup(n.u.ie.name);
-				if (!e->target)
-					break;
-			}
+				ls_free(e), e = NULL;
 		}
 		else
 			ls_free(e), e = NULL;
@@ -282,7 +555,9 @@ static void *ls_watch_thread(void *arg)
 		// add event to queue
 		if (e)
 		{
-			pthread_mutex_lock(&w->lock);
+			e->cb = cb;
+
+			lock_lock(&w->lock);
 
 			if (!w->front)
 			{
@@ -295,44 +570,55 @@ static void *ls_watch_thread(void *arg)
 				w->back = e;
 			}
 
-			pthread_cond_signal(&w->cond);
-			pthread_mutex_unlock(&w->lock);
+			cond_signal(&w->cond);
+			lock_unlock(&w->lock);
 		
 			e = NULL;
 		}
 	}
 
-
-	if (e)
-	{
-		if (e->source) ls_free(e->source);
-		if (e->target) ls_free(e->target);
-		ls_free(e);
-	}
-	
-	pthread_mutex_lock(&w->lock);
-	w->running = 0;
-	pthread_cond_broadcast(&w->cond);
-	pthread_mutex_unlock(&w->lock);
+	ls_free(e);
 
 	return NULL;
 }
 
 #endif // LS_WINDOWS
 
-static void LS_CLASS_FN ls_watch_dtor(struct ls_watch *w)
+static void ls_watch_dtor(struct ls_watch *w)
 {
 #if LS_WINDOWS
-	if (w->hDirectory && w->hDirectory != INVALID_HANDLE_VALUE)
-		CloseHandle(w->hDirectory);
+	DWORD dwRet;
+
+	// cancel pending I/O
+	CancelIoEx(w->hDirectory, &w->ov);
+
+	// signal to stop (should be done in worker thread, just in case)
+	lock_lock(&w->lock);
+	w->error = LS_CANCELED;
+	ls_watch_emit_error(w);
+	lock_unlock(&w->lock);
+
+	// wait for worker thread to exit
+	dwRet = WaitForSingleObject(w->hThread, INFINITE);
+
+	CloseHandle(w->hThread);
+	CloseHandle(w->hDirectory);
+	CloseHandle(w->ov.hEvent);
+
+	lock_unlock(&w->lock);
 #elif LS_DARWIN
-    ls_watch_darwin_free(w->impl);
+    FSEventStreamRelease(w->stream);
+    dispatch_release(w->queue);
+    cond_destroy(&w->cond);
+    lock_destroy(&w->lock);
+    ls_free(w);
 #else
 	struct ls_watch_event_imp *e, *next;
 
-	pthread_mutex_lock(&w->lock);
-	w->stop = 1;
-	pthread_mutex_unlock(&w->lock);
+	lock_lock(&w->lock);
+	w->error = LS_CANCELED;
+	cond_broadcast(&w->cond);
+	lock_unlock(&w->lock);
 
 	pthread_kill(w->thread, SIGINT); // interrupt blocking calls
 	inotify_rm_watch(w->notify, w->watch);
@@ -340,79 +626,72 @@ static void LS_CLASS_FN ls_watch_dtor(struct ls_watch *w)
 
 	pthread_join(w->thread, NULL);
 	
-	pthread_cond_destroy(&w->cond);
-	pthread_mutex_destroy(&w->lock);
+	cond_destroy(&w->cond);
+	lock_destroy(&w->lock);
 
 	// clean up event queue
 	e = w->front;
 	while (e)
 	{
 		next = e->next;
-		if (e->source) ls_free(e->source);
-		if (e->target) ls_free(e->target);
 		ls_free(e);
 		e = next;
 	}
 #endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_watch_wait(struct ls_watch *w, unsigned long ms)
+static int ls_watch_wait(struct ls_watch *w, unsigned long ms)
 {
 #if LS_WINDOWS
-	DWORD dwRet;
-
-	dwRet = WaitForSingleObject(w->ov.hEvent, ms);
-	if (dwRet == WAIT_OBJECT_0)
-		return 0;
-
-	if (dwRet == ERROR_TIMEOUT)
-		return 1;
-	
-	return -1;
-#elif LS_DARWIN
-    return ls_watch_darwin_wait(w->impl, ms);
-#else
 	int rc;
-	struct timespec ts;
-	
-	rc = pthread_mutex_lock(&w->lock);
-	if (rc == -1)
-		return -1;
 
-	rc = 0;
-	while (!w->front && w->running)
+	lock_lock(&w->lock);
+
+	while (w->avail == 0)
 	{
-		if (ms == LS_INFINITE)
+		rc = cond_wait(&w->cond, &w->lock, ms);
+		if (rc == 1)
 		{
-			rc = pthread_cond_wait(&w->cond, &w->lock);
-			if (rc != 0)
-			{
-				rc = -1;
-				break;
-			}
-		}
-		else
-		{
-			ts.tv_sec = ms / 1000;
-			ts.tv_nsec = (ms % 1000) * 1000000;
-
-			rc = pthread_cond_timedwait(&w->cond, &w->lock, &ts);
-			if (rc == ETIMEDOUT)
-			{
-				rc = 1;
-				break;
-			}
-			else if (rc != 0)
-			{
-				rc = -1;
-				break;
-			}
+			lock_unlock(&w->lock);
+			return 1; // timeout
 		}
 	}
 
-	pthread_mutex_unlock(&w->lock);
+	if (w->avail == -1)
+	{
+		rc = w->error;
+		lock_unlock(&w->lock);
+		return ls_set_errno(rc);
+	}
 
-	return rc;
+	lock_unlock(&w->lock);
+
+	return 0;
+#else
+	int rc;
+	
+	lock_lock(&w->lock);
+
+	while (!w->front && !w->error)
+	{
+		rc = cond_wait(&w->cond, &w->lock, ms);
+		if (rc == 1)
+		{
+			lock_unlock(&w->lock);
+			return 1;
+		}
+	}
+	
+	if (w->error)
+	{
+		rc = w->error;
+		lock_unlock(&w->lock);
+		return ls_set_errno(rc);
+	}
+
+	lock_unlock(&w->lock);
+
+	return 0;
 #endif // LS_WINDOWS
 }
 
@@ -423,57 +702,162 @@ static const struct ls_class WatchClass = {
 	.wait = (ls_wait_t)&ls_watch_wait
 };
 
-ls_handle ls_watch_dir(const char *dir, int recursive)
+ls_handle ls_watch_dir(const char *dir, int flags)
 {
 #if LS_WINDOWS
 	struct ls_watch *w;
 	WCHAR szPath[MAX_PATH];
-	int rc;
+	DWORD dwErr;
 
 	w = ls_handle_create(&WatchClass);
-	if (!w) return NULL;
+	if (!w)
+		return NULL;
 
-	rc = ls_utf8_to_wchar_buf(dir, szPath, MAX_PATH);
-	if (!rc)
+	if (ls_utf8_to_wchar_buf(dir, szPath, MAX_PATH) == -1)
 	{
-		ls_close(w);
+		ls_handle_dealloc(w);
 		return NULL;
 	}
 
-	w->recursive = !!recursive;
+	w->flags = flags;
 
 	w->hDirectory = CreateFileW(szPath, FILE_LIST_DIRECTORY,
 		FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
 		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS, NULL);
 	if (w->hDirectory == INVALID_HANDLE_VALUE)
 	{
-		ls_close(w);
+		dwErr = GetLastError();
+		ls_handle_dealloc(w);
+		ls_set_errno_win32(dwErr);
 		return NULL;
 	}
 
-	rc = dispatch_next_read(w);
-	if (rc == -1)
+	w->ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+	if (!w->ov.hEvent)
 	{
-		ls_close(w);
+		dwErr = GetLastError();
+		CloseHandle(w->hDirectory);
+		ls_handle_dealloc(w);
+		ls_set_errno_win32(dwErr);
+		return NULL;
+	}
+
+	(void)lock_init(&w->lock);
+
+	w->hThread = CreateThread(NULL, 0, &ls_watch_worker, w, 0, NULL);
+	if (!w->hThread)
+	{
+		dwErr = GetLastError();
+		lock_destroy(&w->lock);
+		CloseHandle(w->ov.hEvent);
+		CloseHandle(w->hDirectory);
+		ls_handle_dealloc(w);
+		ls_set_errno_win32(dwErr);
 		return NULL;
 	}
 
 	return w;
 #elif LS_DARWIN
     struct ls_watch *w;
+    int rc;
+    FSEventStreamContext ctx;
+    CFStringRef dirsr;
+    CFArrayRef paths;
+    Boolean b;
     
     w = ls_handle_create(&WatchClass);
     if (!w)
         return NULL;
     
-    w->impl = ls_watch_darwin_alloc(dir, recursive);
-    if (!w->impl)
+    rc = lock_init(&w->lock);
+    if (rc == -1)
     {
         ls_handle_dealloc(w);
         return NULL;
     }
     
+    rc = cond_init(&w->cond);
+    if (rc == -1)
+    {
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
+    dirsr = CFStringCreateWithCString(NULL, dir, kCFStringEncodingUTF8);
+    if (!dirsr)
+    {
+        cond_destroy(&w->cond);
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
+    paths = CFArrayCreate(NULL, (const void **)&dirsr, 1, &kCFTypeArrayCallBacks);
+    if (!paths)
+    {
+        CFRelease(dirsr);
+        cond_destroy(&w->cond);
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
+    CFRelease(dirsr), dirsr = NULL;
+
+    ctx.version = 0;
+    ctx.info = w;
+    ctx.retain = NULL;
+    ctx.release = NULL;
+    ctx.copyDescription = NULL;
+    
+    // create event queue
+    w->queue = dispatch_queue_create(dir, DISPATCH_QUEUE_CONCURRENT);
+    if (!w->queue)
+    {
+        cond_destroy(&w->cond);
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+   
+    // Create event stream
+    w->stream = FSEventStreamCreate(NULL,
+                                    &ls_on_fs_event,
+                                    &ctx,
+                                    paths,
+                                    kFSEventStreamEventIdSinceNow,
+                                    0.1,
+                                    kFSEventStreamCreateFlagNone);
+    
+    CFRelease(paths), paths = NULL;
+    
+    if (!w->stream)
+    {
+        dispatch_release(w->queue);
+        cond_destroy(&w->cond);
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
+    // set the event queue for the fs stream
+    FSEventStreamSetDispatchQueue(w->stream, w->queue);
+    
+    // start recieving events
+    b = FSEventStreamStart(w->stream);
+    if (!b)
+    {
+        FSEventStreamRelease(w->stream);
+        dispatch_release(w->queue);
+        cond_destroy(&w->cond);
+        lock_destroy(&w->lock);
+        ls_handle_dealloc(w);
+        return NULL;
+    }
+    
     return w;
+    
 #else
 	struct ls_watch *w;
 	int rc;
@@ -482,19 +866,19 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	if (!w)
 		return NULL;
 
-	w->recursive = !!recursive;
+	w->flags = flags;
 
-	rc = pthread_mutex_init(&w->lock, NULL);
+	rc = lock_init(&w->lock);
 	if (rc == -1)
 	{
 		ls_handle_dealloc(w);
 		return NULL;
 	}
 
-	rc = pthread_cond_init(&w->cond, NULL);
+	rc = cond_init(&w->cond);
 	if (rc == -1)
 	{
-		pthread_mutex_destroy(&w->lock);
+		lock_destroy(&w->lock);
 		ls_handle_dealloc(w);
 		return NULL;
 	}
@@ -502,9 +886,11 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	w->notify = inotify_init1(IN_CLOEXEC);
 	if (w->notify == -1)
 	{
-		pthread_cond_destroy(&w->cond);
-		pthread_mutex_destroy(&w->lock);
+		rc = errno;
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
 		ls_handle_dealloc(w);
+		ls_set_errno_errno(rc);
 		return NULL;
 	}
 
@@ -512,10 +898,12 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	w->watch = inotify_add_watch(w->notify, dir, IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVE);
 	if (w->watch == -1)
 	{
+		rc = errno;
 		close(w->notify);
-		pthread_cond_destroy(&w->cond);
-		pthread_mutex_destroy(&w->lock);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
 		ls_handle_dealloc(w);
+		ls_set_errno_errno(rc);
 		return NULL;
 	}
 
@@ -523,25 +911,26 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 	rc = fcntl(w->watch, F_SETFD, FD_CLOEXEC);
 	if (rc == -1)
 	{
+		rc = errno;
 		inotify_rm_watch(w->notify, w->watch);
 		close(w->notify);
-		pthread_cond_destroy(&w->cond);
-		pthread_mutex_destroy(&w->lock);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
 		ls_handle_dealloc(w);
+		ls_set_errno_errno(rc);
 		return NULL;
 	}
 
-	w->running = 1;
-	
 	rc = pthread_create(&w->thread, NULL, &ls_watch_thread, w);
 	if (rc == -1)
 	{
-		w->running = 0;
+		rc = errno;
 		inotify_rm_watch(w->notify, w->watch);
 		close(w->notify);
-		pthread_cond_destroy(&w->cond);
-		pthread_mutex_destroy(&w->lock);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
 		ls_handle_dealloc(w);
+		ls_set_errno_errno(rc);
 		return NULL;
 	}
 
@@ -549,75 +938,62 @@ ls_handle ls_watch_dir(const char *dir, int recursive)
 #endif // LS_WINDOWS
 }
 
-int ls_watch_get_result(ls_handle watch, struct ls_watch_event *event)
+size_t ls_watch_get_result(ls_handle watch, struct ls_watch_event *event, size_t cb)
 {
-#if LS_WINDOWS
-	struct ls_watch *w = watch;
+	int error;
+	struct ls_watch *w;
 	struct ls_watch_event_imp *e;
-	int action;
+	size_t len;
 
-	if (!w->front)
-		return 1;
+	w = watch;
+
+	if (!w)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (!event != !cb)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	lock_lock(&w->lock);
+
+	if (w->error != 0)
+	{
+		error = w->error;
+		lock_unlock(&w->lock);
+		return ls_set_errno(error);
+	}
 
 	e = w->front;
+
+	if (!e)
+	{
+		// no events
+		lock_unlock(&w->lock);
+		return 0;
+	}
+
+	len = e->cb;
+
+	if (!event)
+	{
+		lock_unlock(&w->lock);
+		return len;
+	}
+
+	if (len < cb)
+	{
+		lock_unlock(&w->lock);
+		return ls_set_errno(LS_BUFFER_TOO_SMALL);
+	}
+
+	memcpy(event, &e->event, len);
+
 	w->front = w->front->next;
 	if (!w->front)
 		w->back = NULL;
 
-	action = e->action;
-	memcpy(w->source, e->source, MAX_PATH);
-	memcpy(w->target, e->target, MAX_PATH);
+	lock_unlock(&w->lock);
 
 	ls_free(e);
 
-	event->action = action;
-	event->source = w->source[0] ? w->source : NULL;
-	event->target = w->target[0] ? w->target : NULL;
-
-	return 0;
-#elif LS_DARWIN
-    struct ls_watch *w = watch;
-    return ls_watch_darwin_get_result(w->impl, event);
-#else
-	struct ls_watch *w = watch;
-	struct ls_watch_event_imp *e;
-
-	event->source = NULL;
-	event->target = NULL;
-
-	pthread_mutex_lock(&w->lock);
-
-	if (!w->front)
-	{
-		pthread_mutex_unlock(&w->lock);
-		return 1;
-	}
-
-	e = w->front;
-	w->front = w->front->next;
-	if (!w->front)
-		w->back = NULL;
-
-	if (e->source)
-	{
-		strncpy(w->source, e->source, NAME_MAX);
-		event->source = w->source;
-	}
-
-	if (e->target)
-	{
-		strncpy(w->target, e->target, NAME_MAX);
-		event->target = w->target;
-	}
-
-	pthread_mutex_unlock(&w->lock);
-
-	event->action = e->action;
-
-	if (e->target) ls_free(e->target);
-	if (e->source) ls_free(e->source);
-	ls_free(e);
-
-	return 0;
-#endif // LS_WINDOWS
+	return len;
 }

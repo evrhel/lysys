@@ -4,6 +4,7 @@
 #include <memory.h>
 #include <signal.h>
 #include <string.h>
+#include <stdio.h>
 
 #include <lysys/ls_time.h>
 #include <lysys/ls_sync.h>
@@ -12,152 +13,119 @@
 
 #include "ls_native.h"
 
-#if LS_DARWIN
-#include "ls_pasteboard.h"
-#endif // LS_DARWIN
+int ls_errno(void) { return _ls_errno; }
 
-extern int ls_init_sysinfo(void);
-extern void ls_deinit_sysinfo(void);
-
-static ls_exit_hook_t *_exit_hooks = NULL;
-static size_t _num_exit_hooks = 0;
-
-static struct ls_allocator _allocator = {0};
-
-int ls_init(const struct ls_allocator *allocator)
+void ls_perror(const char *msg)
 {
-#if LS_WINDOWS
-	HRESULT hr;
+	if (msg)
+		fprintf(stderr, "%s: ", msg);
+	fprintf(stderr, "%s\n", ls_strerror(_ls_errno));
+}
 
-	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if (!SUCCEEDED(hr))
-		return -1;
-#endif // LS_WINDOWS
-
-	if (allocator == NULL)
+const char *ls_strerror(int err)
+{
+	switch (err)
 	{
-		_allocator = (struct ls_allocator){
-			.malloc = malloc,
-			.calloc = calloc,
-			.realloc = realloc,
-			.free = free};
+	default:
+	case LS_UNKNOWN_ERROR: return "Unknown error";
+	case LS_SUCCESS: return "Success";
+	case LS_INVALID_HANDLE: return "A handle is invalid";
+	case LS_OUT_OF_MEMORY: return "There is insufficient memory to complete the operation";
+	case LS_INVALID_ARGUMENT: return "One or more arguments are invalid";
+	case LS_INVALID_STATE: return "An invalid state was detected";
+	case LS_NOT_WAITABLE: return "The object is not waitable";
+	case LS_ACCESS_DENIED: return "Access denied";
+	case LS_FILE_NOT_FOUND: return "File not found";
+	case LS_BUFFER_TOO_SMALL: return "Buffer too small, retry with a larger buffer";
+	case LS_INVALID_ENCODING: return "Invalid character encoding";
+	case LS_SHARING_VIOLATION: return "File sharing violation";
+	case LS_OUT_OF_RANGE: return "A value is out of range";
+	case LS_NOT_SUPPORTED: return "The operation is not supported";
+	case LS_PATH_NOT_FOUND: return "The path was not found";
+	case LS_END_OF_FILE: return "The end of the file has been reached";
+	case LS_ALREADY_EXISTS: return "The object already exists";
+	case LS_NOT_FOUND: return "The object was not found";
+	case LS_BAD_PIPE: return "The pipe is broken";
+	case LS_NO_MORE_FILES: return "No more files";
+	case LS_NO_DATA: return "No data available";
+	case LS_NOT_READY: return "The object is not ready";
+	case LS_DEADLOCK: return "A deadlock was detected";
+	case LS_INTERRUPTED: return "The operation was interrupted";
+	case LS_IO_ERROR: return "An I/O error occurred";
+	case LS_DISK_FULL: return "The disk is full";
+	case LS_BUSY: return "The resource is busy";
+	case LS_TIMEDOUT: return "The operation timed out";
+	case LS_INVALID_PATH: return "The path is invalid";
+	case LS_INVALID_IMAGE: return "The image is invalid";
+	case LS_CANCELED: return "The operation was canceled";
+	case LS_INTERNAL_ERROR: return "An internal error occurred";
+	case LS_NOT_IMPLEMENTED: return "The operation is not implemented";
 	}
-	else
-	{
-		_allocator = *allocator;
-
-		if (_allocator.malloc == NULL || _allocator.calloc == NULL || _allocator.realloc == NULL || _allocator.free == NULL)
-			return -1;
-	}
-
-	_exit_hooks = NULL;
-	_num_exit_hooks = 0;
-    
-#if LS_DARWIN
-    if (ls_init_pasteboard() == -1)
-        return -1;
-#endif // LS_DARWIN
-
-	if (ls_set_epoch() == -1)
-		return -1;
-
-	(void)ls_init_sysinfo(); // optional feature
-
-	return 0;
 }
 
-void ls_shutdown(void)
+size_t ls_substr(const char *s, size_t n, char *buf)
 {
-	ls_deinit_sysinfo();
+	size_t maxlen;
+	
+	if (!s || !buf)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-#if LS_DARWIN
-    ls_deinit_pasteboard();
-#endif // LS_DARWIN
-    
-	ls_free(_exit_hooks);
-	_exit_hooks = NULL;
-	_num_exit_hooks = 0;
+	maxlen = strlen(s);
+	if (n > maxlen)
+		n = maxlen;
 
-	memset(&_allocator, 0, sizeof(_allocator));
-}
-
-int ls_add_exit_hook(ls_exit_hook_t hook)
-{
-	ls_exit_hook_t *hooks;
-
-	hooks = ls_realloc(_exit_hooks, (_num_exit_hooks + 1) * sizeof(ls_exit_hook_t));
-	if (hooks == NULL)
-		return -1;
-
-	_exit_hooks = hooks;
-	_exit_hooks[_num_exit_hooks++] = hook;
-
-	return 0;
-}
-
-void ls_exit(int status)
-{
-	ls_exit_hook_t *hook;
-
-	for (hook = _exit_hooks; hook < _exit_hooks + _num_exit_hooks; ++hook)
-		(*hook)(status);
-
-	ls_shutdown();
-	exit(status);
-}
-
-int ls_errno(void)
-{
-	// TODO: Implement
-	return 0;	
+	memcpy(buf, s, n);
+	buf[n] = 0;
+	return n;
 }
 
 void *ls_malloc(size_t size)
 {
-	return _allocator.malloc(size);
+	void *p;
+
+	p = malloc(size);
+	if (!p)
+		ls_set_errno(LS_OUT_OF_MEMORY);
+	return p;
 }
 
-void *ls_calloc(size_t nmemb, size_t size)
+void *ls_calloc(size_t count, size_t size)
 {
-	return _allocator.calloc(nmemb, size);
+	void *p;
+
+	p = calloc(count, size);
+	if (!p)
+		ls_set_errno(LS_OUT_OF_MEMORY);
+	return p;
 }
 
 void *ls_realloc(void *ptr, size_t size)
 {
-	return _allocator.realloc(ptr, size);
+	void *p;
+
+	p = realloc(ptr, size);
+	if (!p)
+		ls_set_errno(LS_OUT_OF_MEMORY);
+	return p;
 }
 
-void ls_free(void *ptr)
-{
-	_allocator.free(ptr);
-}
+void ls_free(void *ptr) { free(ptr); }
 
 char *ls_strdup(const char *s)
 {
+	char *r;
 	size_t len;
-	char *dup;
 
-	if (s == NULL)
+	if (!s)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
+	}
 
-	len = strlen(s);
+	len = strlen(s) + 1;
 
-	dup = ls_malloc(len + 1);
-	if (!dup)
+	r = ls_malloc(len);
+	if (!r)
 		return NULL;
-
-	memcpy(dup, s, len + 1);
-	return dup;
-}
-
-size_t ls_substr(const char *s, size_t n, char *buf, size_t size)
-{
-	if (size == 0)
-		return 0;
-
-	if (n > size - 1)
-		n = size - 1;
-	memcpy(buf, s, n);
-	buf[n] = 0;
-	return n;
+	return memcpy(r, s, len);
 }

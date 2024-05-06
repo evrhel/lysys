@@ -11,6 +11,6 @@
 
 size_t ls_page_size(void);
 
-int ls_protect(void *ptr, size_t size, int protect, int *old);
+int ls_protect(void *ptr, size_t size, int protect);
 
 #endif // _LS_MEMORY_H_

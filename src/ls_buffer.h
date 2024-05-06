@@ -13,6 +13,8 @@ typedef struct ls_buffer
 
 void ls_buffer_release(ls_buffer_t *buffer);
 
+void ls_buffer_clear(ls_buffer_t *buffer);
+
 int ls_buffer_resize(ls_buffer_t *buffer, size_t size);
 
 int ls_buffer_reserve(ls_buffer_t *buffer, size_t capacity);

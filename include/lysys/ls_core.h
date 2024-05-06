@@ -5,30 +5,6 @@
 
 #define LS_INFINITE ((unsigned long)-1)
 
-typedef void (*ls_exit_hook_t)(int);
-
-struct ls_allocator
-{
-	void *(*malloc)(size_t size);
-	void *(*calloc)(size_t nmemb, size_t size);
-	void *(*realloc)(void *ptr, size_t size);
-	void (*free)(void *ptr);
-};
-
-int ls_init(const struct ls_allocator *allocator);
-
-void ls_shutdown(void);
-
-int ls_add_exit_hook(ls_exit_hook_t hook);
-
-//! \brief Exit the program.
-//!
-//! Exits the program with the specified status code. This function
-//! will call any registered exit hooks before the program exits.
-//!
-//! \param [in] status The status code to exit with.
-void ls_exit(int status);
-
 //! \brief Wait for a handle to become signaled.
 //! 
 //! Waits for the specified handle to become signaled. If the handle
@@ -76,16 +52,33 @@ void ls_close(ls_handle h);
 //! \return The last error code or 0 if no error occurred.
 int ls_errno(void);
 
+void ls_perror(const char *msg);
+
+const char *ls_strerror(int err);
+
+//! \brief Extract a substring.
+//! 
+//! Extracts n characters from the string s and copies them to the
+//! buffer buf. The buffer must be large enough to store the substring,
+//! including the null terminator (i.e. buf must be at least n + 1
+//! bytes long). The substring is copied to the buffer and the buffer
+//! is null-terminated. If n is greater than the length of s, the entire
+//! string is copied to the buffer. The length of the substring copied
+//! to the buffer is returned, excluding the null terminator.
+//! 
+//! \param s The string to extract from.
+//! \param n The number of characters to extract.
+//! \param buf The buffer to copy the substring to.
+//! 
+//! \return The length of the substring copied to the buffer, excluding
+//! the null terminator. If an error occurs, -1 is returned.
+size_t ls_substr(const char *s, size_t n, char *buf);
+
 void *ls_malloc(size_t size);
-
-void *ls_calloc(size_t nmemb, size_t size);
-
+void *ls_calloc(size_t count, size_t size);
 void *ls_realloc(void *ptr, size_t size);
-
 void ls_free(void *ptr);
 
 char *ls_strdup(const char *s);
-
-size_t ls_substr(const char *s, size_t n, char *buf, size_t size);
 
 #endif // _LYSYS_H_

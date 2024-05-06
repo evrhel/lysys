@@ -5,10 +5,17 @@
 
 #include <lysys/ls_core.h>
 
+#include "ls_native.h"
+
 void ls_buffer_release(ls_buffer_t *buffer)
 {
 	ls_free(buffer->data);
 	buffer->data = buffer->pos = buffer->end = NULL;
+}
+
+void ls_buffer_clear(ls_buffer_t *buffer)
+{
+	buffer->pos = buffer->data;
 }
 
 int ls_buffer_resize(ls_buffer_t *buffer, size_t size)
@@ -30,6 +37,9 @@ int ls_buffer_reserve(ls_buffer_t *buffer, size_t capacity)
 	uint8_t *data;
 
 	data = (uint8_t *)ls_realloc(buffer->data, capacity);	
+	if (!data)
+		return -1;
+
 	buffer->pos = data + (buffer->pos - buffer->data);
 	buffer->end = data + capacity;
 

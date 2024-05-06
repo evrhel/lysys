@@ -19,15 +19,36 @@
 #define LS_EVENT (9 | LS_WAITABLE)
 #define LS_WATCH (10 | LS_WAITABLE)
 #define LS_TLS 11
+#define LS_PERF_MONITOR 12
+#define LS_AIO (13 | LS_WAITABLE)
+#define LS_SNAPSHOT 14
 
-#if LS_WINDOWS
-#define LS_CLASS_FN __stdcall
-#else
-#define LS_CLASS_FN
-#endif // LS_WINDOWS
+// handle is statically allocated, will never have memory deallocated
+// or destructor called
+#define LS_HANDLE_FLAG_STATIC 0x10000
 
-typedef void(LS_CLASS_FN *ls_dtor_t)(void *ptr);
-typedef int(LS_CLASS_FN *ls_wait_t)(void *ptr, unsigned long ms);
+/* Reserved psuedo-handles */
+
+#define LS_PSUEDO_HANDLE_LOW ((ls_handle)0x00000000)
+#define LS_PSUEDO_HANDLE_HIGH ((ls_handle)0x0000ffff)
+
+#define LS_SELF ((ls_handle)0x0000fffe)
+
+#define LS_IS_PSUEDO_HANDLE(h) ((h) >= LS_PSUEDO_HANDLE_LOW && (h) <= LS_PSUEDO_HANDLE_HIGH)
+
+#define LS_HANDLE_DATA(hi) ((ls_handle)((hi) + 1))
+#define LS_HANDLE_INFO(h) ((struct ls_handle_info *)(h)-1)
+
+// handle info initializer for static handles
+#define __hiinit(_clazz) \
+	{ \
+		.clazz = &_clazz, \
+		.flags = LS_HANDLE_FLAG_STATIC, \
+		.refcount = 1 \
+	}
+
+typedef void(*ls_dtor_t)(void *ptr);
+typedef int(*ls_wait_t)(void *ptr, unsigned long ms);
 
 //! \brief Class structure
 struct ls_class
@@ -42,14 +63,15 @@ struct ls_class
 struct ls_handle_info
 {
 	const struct ls_class *clazz;	//!< Class of the handle
-	uint8_t data[0];				//!< Data of the handle
+	int flags;						//!< Flags of the handle
+	uint32_t refcount;				//!< Reference count (unused)
 };
 
 //! \brief Create handle from class.
 //! 
-//! \details Creates a new handle of the given class.
+//! Creates a new handle of the given class.
 //! 
-//! \param [in] clazz The class of the handle. Must be valid
+//! \param clazz The class of the handle. Must be valid
 //! through the lifetime of the handle.
 //! 
 //! \return The new handle. This is a pointer to the handle data. The
@@ -58,16 +80,16 @@ ls_handle ls_handle_create(const struct ls_class *clazz);
 
 //! \brief Deallocate memory used by the handle.
 //!
-//! \details Deallocates memory that was allocated through
+//! Deallocates memory that was allocated through
 //! ls_handle_create. Does not call the destructor. Use
 //! ls_close to call the destructor and deallocate memory.
+//! This does not check the reference count of the handle,
+//! meaning the memory will always be deallocated. Statically
+//! allocated handles or psuedo-handles will be ignored.
+//! 
+//! Will not affect _ls_errno.
+//! 
+//! \param h The handle to deallocate.
 void ls_handle_dealloc(ls_handle h);
-
-//! \brief Retrieve handle information.
-//! 
-//! \param [in] h The handle. Cannot be NULL.
-//! 
-//! \return The handle information.
-#define ls_get_handle_info(h) ((struct ls_handle_info *)(h)-1)
 
 #endif // _LS_HANDLE_H_

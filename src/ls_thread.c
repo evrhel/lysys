@@ -13,71 +13,87 @@ struct ls_thread
 	HANDLE hThread;
 #else
 	pthread_t thread;
-	int active;
 #endif // LS_WINDOWS
 
 	ls_thread_func_t func;
 	void *up;
+
+	unsigned long id;
 };
 
-static void LS_CLASS_FN ls_thread_dtor(struct ls_thread *th)
+struct ls_thread_self
+{
+	struct ls_handle_info hi;
+	struct ls_thread th;
+};
+
+static void ls_thread_dtor(struct ls_thread *th)
 {
 #if LS_WINDOWS
-	if (th->hThread)
-		CloseHandle(th->hThread);
+	CloseHandle(th->hThread);
 #else
-	if (th->active)
-		pthread_detach(th->thread);
+	pthread_detach(th->thread);
 #endif // LS_WINDOWS
 }
 
-static int LS_CLASS_FN ls_thread_wait(struct ls_thread *th)
+static int ls_thread_wait(struct ls_thread *th, unsigned long ms)
 {
 #if LS_WINDOWS
 	DWORD dwResult;
 
-	if (!th->hThread)
-		return 0;
+	if (th->id == GetCurrentThreadId())
+		return ls_set_errno(LS_NOT_WAITABLE); // Myself
 
-	dwResult = WaitForSingleObject(th->hThread, INFINITE);
+	dwResult = WaitForSingleObject(th->hThread, ms);
 	if (dwResult == WAIT_OBJECT_0)
 	{
-		CloseHandle(th->hThread);
 		th->hThread = NULL;
 		return 0;
 	}
+
+	if (dwResult == WAIT_TIMEOUT)
+		return 1;
 	
-	return -1;
+	return ls_set_errno_win32(GetLastError());
 #else
 	int rc;
+    uint64_t id;
+    
+#if LS_DARWIN
+    pthread_threadid_np(NULL, &id);
+#else
+    id = pthread_self();
+#endif // LS_DARWIN
 
-	if (!th->active)
-		return 0;
+	if (th->id == id)
+		return ls_set_errno(LS_NOT_WAITABLE); // Myself
 
 	rc = pthread_join(th->thread, NULL);
-	if (rc != 0) return -1;
+	if (rc != 0)
+	{
+		if (rc == ESRCH)
+			return 0; // Already waited
 
-	th->active = 0;
+		return ls_set_errno(LS_INVALID_STATE);
+	}
+
 	return 0;
 #endif // LS_WINDOWS
 }
 
 #if LS_WINDOWS
-static DWORD CALLBACK ls_thread_startup(struct ls_thread *th)
-{
-	th->func(th->up);
-	return 0;
-}
+#define ENTRY_PROC DWORD CALLBACK
+#define EXIT_OK 0
 #else
-
-static void *ls_thread_startup(void *param)
-{
-	struct ls_thread *th = param;
-	th->func(th->up);
-	return NULL;
-}
-
+#define ENTRY_PROC void *
+#define EXIT_OK NULL
 #endif // LS_WINDOWS
+
+static ENTRY_PROC ls_thread_startup(struct ls_thread *th)
+{
+	th->func(th->up);
+	return EXIT_OK;
+}
 
 static const struct ls_class ThreadClass = {
 	.type = LS_THREAD,
@@ -92,14 +108,16 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 	struct ls_thread *th;
 
 	th = ls_handle_create(&ThreadClass);
-	if (!th) return NULL;
+	if (!th)
+		return NULL;
 
 	th->func = func;
 	th->up = up;
 
-	th->hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)&ls_thread_startup, th, 0, NULL);
+	th->hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)&ls_thread_startup, th, 0, &th->id);
 	if (!th->hThread)
 	{
+		ls_set_errno_win32(GetLastError());
 		ls_handle_dealloc(th);
 		return NULL;
 	}
@@ -108,20 +126,30 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 #else
 	struct ls_thread *th;
 	int rc;
+#if LS_DARWIN
+	uint64_t id;
+#endif // LS_DARWIN
 
 	th = ls_handle_create(&ThreadClass);
-	if (!th) return NULL;
+	if (!th)
+		return NULL;
 
 	th->func = func;
 	th->up = up;
-	th->active = 1;
 
-	rc = pthread_create(&th->thread, NULL, &ls_thread_startup, th);
+	rc = pthread_create(&th->thread, NULL, (void *(*)(void*))&ls_thread_startup, th);
 	if (rc != 0)
 	{
 		ls_handle_dealloc(th);
 		return NULL;
 	}
+
+#if LS_DARWIN
+	(void)pthread_threadid_np(th->thread, &id);
+	th->id = id;
+#else
+	th->id = th->thread;
+#endif // LS_DARWIN
 
 	return th;
 #endif // LS_WINDOWS
@@ -129,28 +157,37 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 
 unsigned long ls_thread_id(ls_handle th)
 {
-#if LS_WINDOWS
-	struct ls_thread *t = *(struct ls_thread **)th;
-	return GetThreadId(t->hThread);
-#else
-	struct ls_thread *t = *(struct ls_thread **)th;
-	return t->thread;
-#endif // LS_WINDOWS
+	struct ls_thread *t = th;
+
+	if (!th)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if (th == LS_SELF)
+		return ls_thread_id_self();
+
+	return t->id;
 }
 
-unsigned long ls_thread_self(void)
+unsigned long ls_thread_id_self(void)
 {
 #if LS_WINDOWS
 	return GetCurrentThreadId();
+#elif LS_DARWIN
+	uint64_t id;
+	(void)pthread_threadid_np(NULL, &id);
+	return id;
 #else
 	return pthread_self();
 #endif // LS_WINDOWS
 }
 
+ls_handle ls_thread_self(void) { return LS_SELF; }
+
 int ls_is_active_thread_id(unsigned long id)
 {
 #if LS_WINDOWS
 	HANDLE hThread;
+
 	hThread = OpenThread(THREAD_QUERY_INFORMATION, FALSE, id);
 	if (hThread)
 	{
@@ -159,6 +196,8 @@ int ls_is_active_thread_id(unsigned long id)
 	}
 
 	return 0;
+#elif LS_DARWIN
+	return ls_set_errno(LS_NOT_IMPLEMENTED); // TODO: Implement
 #else
 	return pthread_kill(id, 0) == 0;
 #endif // LS_WINDOWS
@@ -182,7 +221,7 @@ struct ls_tls
 #endif // LS_WINDOWS
 };
 
-static void LS_CLASS_FN ls_tls_dtor(struct ls_tls *tls)
+static void ls_tls_dtor(struct ls_tls *tls)
 {
 #if LS_WINDOWS
 	TlsFree(tls->dwTlsIndex);
@@ -210,13 +249,16 @@ ls_handle ls_tls_create(void)
 	tls->dwTlsIndex = TlsAlloc();
 	if (tls->dwTlsIndex == TLS_OUT_OF_INDEXES)
 	{
+		ls_set_errno_win32(GetLastError());
 		ls_handle_dealloc(tls);
+		ls_set_errno(LS_OUT_OF_MEMORY);
 		return NULL;
 	}
 
 	return tls;
 #else
 	// TODO: Implement
+	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return NULL;
 #endif // LS_WINDOWS
 }
@@ -224,10 +266,20 @@ ls_handle ls_tls_create(void)
 int ls_tls_set(ls_handle tlsh, void *value)
 {
 #if LS_WINDOWS
+	BOOL b;
 	struct ls_tls *tls = tlsh;
-	return TlsSetValue(tls->dwTlsIndex, value) ? 0 : -1;
+
+	if (!tlsh)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	b = TlsSetValue(tls->dwTlsIndex, value);
+	if (!b)
+		return ls_set_errno_win32(GetLastError());
+
+	return 0;
 #else
 	// TODO: Implement
+	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return -1;
 #endif // LS_WINDOWS
 }
@@ -235,10 +287,21 @@ int ls_tls_set(ls_handle tlsh, void *value)
 void *ls_tls_get(ls_handle tlsh)
 {
 #if LS_WINDOWS
+	LPVOID lpValue;
 	struct ls_tls *tls = tlsh;
-	return TlsGetValue(tls->dwTlsIndex);
+	DWORD dwError;
+
+	lpValue = TlsGetValue(tls->dwTlsIndex);
+	if (!lpValue)
+	{
+		dwError = GetLastError();
+		if (dwError != ERROR_SUCCESS)
+			ls_set_errno_win32(dwError);
+	}
+	return lpValue;
 #else
 	// TODO: Implement
+	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return NULL;
 #endif // LS_WINDOWS
 }

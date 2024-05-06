@@ -12,9 +12,7 @@ struct ls_timespec
 	int millisecond;
 };
 
-int ls_set_epoch(void);
-
-long long ls_nano_time(void);
+long long ls_nanotime(void);
 
 double ls_time64(void);
 

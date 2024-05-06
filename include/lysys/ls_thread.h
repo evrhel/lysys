@@ -25,7 +25,17 @@ unsigned long ls_thread_id(ls_handle th);
 //! \brief Query the ID of the calling thread.
 //!
 //! \return The thread ID.
-unsigned long ls_thread_self(void);
+unsigned long ls_thread_id_self(void);
+
+//! \brief Get a pseudo-handle to the calling thread.
+//! 
+//! Returns a pseudo-handle to the calling thread. The handle does not
+//! need to be closed. The handle always refers to the calling thread.
+//! If the the handle is passed accross a thread boundary, the handle
+//! will refer to the thread that received the handle.
+//! 
+//! \return A pseudo-handle to the calling thread.
+ls_handle ls_thread_self(void);
 
 //! \brief Yield the calling thread.
 //!
