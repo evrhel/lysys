@@ -40,30 +40,24 @@ This program reads from the file `file.txt` and prints its contents to the termi
 
 int main(int argc, char *argv[])
 {
-    char buf[512];
-    size_t bytes_read;
-    ls_handle file;
+	char buf[512];
+	size_t bytes_read;
+	ls_handle file;
 
-    // Initialize the library
-    ls_init(NULL);
+	// Open file `file.txt` for reading
+	file = ls_open("file.txt", LS_FILE_READ, LS_SHARE_READ, LS_OPEN_EXISTING);
 
-    // Open file `file.txt` for reading
-    file = ls_open("file.txt", LS_A_READ, LS_S_READ, LS_OPEN_EXISTING);
+	// Read in file contents
+	bytes_read = ls_read(file, buf, sizeof(buf) - 1);
+	buf[bytes_read] = 0;
 
-    // Read in file contents
-    bytes_read = ls_read(file, buf, sizeof(buf) - 1, NULL);
-    buf[bytes_read] = 0; // null terminate
+	// Close the file
+	ls_close(file);
 
-    // Close the file
-    ls_close(file);
+	// Write to terminal
+	puts(buf);	
 
-    // Write to terminal
-    puts(buf);
-
-    // Cleanup library
-    ls_shutdown();
-
-    return 0;
+	return 0;
 }
 ```
 
