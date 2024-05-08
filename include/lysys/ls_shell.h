@@ -35,6 +35,12 @@ char *ls_strdir(const char *path);
 //! NULL if the path separator is not found
 char *ls_strrdir(const char *path);
 
+void ls_path_win32(char *path);
+
+void ls_path_unix(char *path);
+
+void ls_path_native(char *path);
+
 //! \brief Get the directory name of a path.
 //! 
 //! Extracts the directory name from a path. The directory name is the
@@ -105,5 +111,13 @@ size_t ls_relpath(const char *path, const char *base, char *buf, size_t size);
 size_t ls_realpath(const char *path, char *buf, size_t size);
 
 size_t ls_cwd(char *buf, size_t size);
+
+int ls_shell_move( const char *src, const char *dst );
+
+int ls_shell_copy( const char *src, const char *dst );
+
+int ls_shell_delete( const char *path );
+
+int ls_shell_recycle( const char *path );
 
 #endif // _LS_SHELL_H_

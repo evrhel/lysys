@@ -13,6 +13,11 @@
 #define LS_DIR_USER_TEMPLATES 0x08
 #define LS_DIR_USER_PUBLIC 0x09
 
+#define LS_DIR_WINDOWS 0x1001
+#define LS_DIR_SYSTEM32 0x1002
+#define LS_DIR_PROGRAM_FILES 0x1003
+#define LS_DIR_PROGRAM_FILES_X86 0x1004
+
 size_t ls_username(char *name, size_t size);
 
 size_t ls_home(char *path, size_t size);

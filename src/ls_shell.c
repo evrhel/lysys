@@ -1,7 +1,7 @@
 #include "ls_native.h"
 
 #include <lysys/ls_shell.h>
-
+#include <lysys/ls_file.h>
 #include <lysys/ls_core.h>
 
 #include <string.h>
@@ -37,6 +37,35 @@ char *ls_strrdir(const char *path)
 		path++;
 	}
 	return (char *)last;
+}
+
+void ls_path_win32(char *path)
+{
+	while (*path)
+	{
+		if (*path == '/')
+			*path = '\\';
+		path++;
+	}
+}
+
+void ls_path_unix(char *path)
+{
+	while (*path)
+	{
+		if (*path == '\\')
+			*path = '/';
+		path++;
+	}
+}
+
+void ls_path_native(char *path)
+{
+#if LS_WINDOWS
+	ls_path_win32(path);
+#else
+	ls_path_unix(path);
+#endif // LS_WINDOWS
 }
 
 size_t ls_dirname(const char *path, char *buf, size_t size)
@@ -600,5 +629,274 @@ size_t ls_cwd(char *buf, size_t size)
 
 	memcpy(buf, r, len);
 	return len - 1;
+#endif // LS_WINDOWS
+}
+
+#if LS_WINDOWS
+static int ls_parse_move_names(const char *src, const char *dst, PWCHAR wszSrc, PWCHAR wszDstName, PWCHAR wszDstDir)
+{
+	size_t len;
+	PWSTR pszMatch;
+
+	len = ls_utf8_to_wchar_buf(src, wszSrc, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	len = ls_utf8_to_wchar_buf(dst, wszDstDir, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	pszMatch = (PWSTR)StrRChrW(wszDstDir, NULL, L'\\');
+	if (!pszMatch)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+	*pszMatch = L'\0';
+
+	wcscpy_s(wszDstName, MAX_PATH, pszMatch + 1);
+
+	return 0;
+}
+
+static IShellItem *ls_item_from_parsing_name(PCWSTR pwzPath, IBindCtx *ctx)
+{
+	IShellItem *psi = NULL;
+	HRESULT hr;
+
+	hr = SHCreateItemFromParsingName(pwzPath, ctx, &IID_IShellItem, (void **)&psi);
+	if (FAILED(hr))
+	{
+		ls_set_errno_hresult(hr);
+		return NULL;
+	}
+
+	return psi;
+}
+#endif // LS_WINDOWS
+
+int ls_shell_move(const char *src, const char *dst)
+{
+#if LS_WINDOWS
+	WCHAR wszSrc[MAX_PATH];
+	WCHAR wszDstName[MAX_PATH];
+	WCHAR wszDstDir[MAX_PATH];
+	int rc;
+	HRESULT hr;
+	IFileOperation *pfo = NULL;
+	IShellItem *psiFrom;
+	IShellItem *psiTo;
+
+	rc = ls_parse_move_names(src, dst, wszSrc, wszDstName, wszDstDir);
+	if (rc == -1)
+		return -1;
+
+	hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_ALL, &IID_IFileOperation, (void **)&pfo);
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = pfo->lpVtbl->SetOperationFlags(pfo, FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO);
+	if (FAILED(hr))
+	{
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	psiFrom = ls_item_from_parsing_name(wszSrc, NULL);
+	if (!psiFrom)
+	{
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	psiTo = ls_item_from_parsing_name(wszDstDir, NULL);
+	if (!psiTo)
+	{
+		psiFrom->lpVtbl->Release(psiFrom);
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	hr = pfo->lpVtbl->MoveItem(pfo, psiFrom, psiTo, wszDstName, NULL);
+	if (FAILED(hr))
+	{
+		psiTo->lpVtbl->Release(psiTo);
+		psiFrom->lpVtbl->Release(psiFrom);
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	hr = pfo->lpVtbl->PerformOperations(pfo);
+	
+	psiTo->lpVtbl->Release(psiTo);
+	psiFrom->lpVtbl->Release(psiFrom);
+	pfo->lpVtbl->Release(pfo);
+
+	return ls_set_errno_hresult(hr);
+#else
+	return ls_move(src, dst);
+#endif // LS_WINDOWS
+}
+
+int ls_shell_copy(const char *src, const char *dst)
+{
+#if LS_WINDOWS
+	WCHAR wszSrc[MAX_PATH];
+	WCHAR wszDst[MAX_PATH];
+	size_t len;
+	HRESULT hr;
+	IFileOperation *pfo = NULL;
+	IShellItem *psiFrom;
+	IShellItem *psiTo;
+
+	len = ls_utf8_to_wchar_buf(src, wszSrc, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	len = ls_utf8_to_wchar_buf(dst, wszDst, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_ALL, &IID_IFileOperation, (void **)&pfo);
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = pfo->lpVtbl->SetOperationFlags(pfo, FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO);
+	if (FAILED(hr))
+	{
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	psiFrom = ls_item_from_parsing_name(wszSrc, NULL);
+	if (!psiFrom)
+	{
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	psiTo = ls_item_from_parsing_name(wszDst, NULL);
+	if (!psiTo)
+	{
+		psiFrom->lpVtbl->Release(psiFrom);
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	hr = pfo->lpVtbl->CopyItem(pfo, psiFrom, psiTo, NULL, NULL);
+	if (FAILED(hr))
+	{
+		psiTo->lpVtbl->Release(psiTo);
+		psiFrom->lpVtbl->Release(psiFrom);
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	hr = pfo->lpVtbl->PerformOperations(pfo);
+
+	psiTo->lpVtbl->Release(psiTo);
+	psiFrom->lpVtbl->Release(psiFrom);
+	pfo->lpVtbl->Release(pfo);
+
+	return ls_set_errno_hresult(hr);
+#else
+	return ls_copy(src, dst);
+#endif // LS_WINDOWS
+}
+
+int ls_shell_delete(const char *path)
+{
+#if LS_WINDOWS
+	WCHAR szPath[MAX_PATH];
+	size_t len;
+	HRESULT hr;
+	IFileOperation *pfo = NULL;
+	IShellItem *psi;
+
+	len = ls_utf8_to_wchar_buf(path, szPath, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_ALL, &IID_IFileOperation, (void **)&pfo);
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = pfo->lpVtbl->SetOperationFlags(pfo, FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT);
+	if (FAILED(hr))
+	{
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	psi = ls_item_from_parsing_name(szPath, NULL);
+	if (!psi)
+	{
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	hr = pfo->lpVtbl->DeleteItem(pfo, psi, NULL);
+	if (FAILED(hr))
+	{
+		psi->lpVtbl->Release(psi);
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	hr = pfo->lpVtbl->PerformOperations(pfo);
+
+	psi->lpVtbl->Release(psi);
+	pfo->lpVtbl->Release(pfo);
+
+	return ls_set_errno_hresult(hr);
+#else
+	return ls_delete(path);
+#endif // LS_WINDOWS
+}
+
+int ls_shell_recycle(const char *path)
+{
+#if LS_WINDOWS
+	WCHAR szPath[MAX_PATH];
+	size_t len;
+	HRESULT hr;
+	IFileOperation *pfo = NULL;
+	IShellItem *psi;
+
+	len = ls_utf8_to_wchar_buf(path, szPath, MAX_PATH);
+	if (len == -1)
+		return -1;
+
+	hr = CoCreateInstance(&CLSID_FileOperation, NULL, CLSCTX_ALL, &IID_IFileOperation, (void **)&pfo);
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = pfo->lpVtbl->SetOperationFlags(pfo, FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO);
+	if (FAILED(hr))
+	{
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	psi = ls_item_from_parsing_name(szPath, NULL);
+	if (!psi)
+	{
+		pfo->lpVtbl->Release(pfo);
+		return -1;
+	}
+
+	hr = pfo->lpVtbl->DeleteItem(pfo, psi, NULL);
+	if (FAILED(hr))
+	{
+		psi->lpVtbl->Release(psi);
+		pfo->lpVtbl->Release(pfo);
+		return ls_set_errno_hresult(hr);
+	}
+
+	hr = pfo->lpVtbl->PerformOperations(pfo);
+
+	psi->lpVtbl->Release(psi);
+	pfo->lpVtbl->Release(pfo);
+
+	return ls_set_errno_hresult(hr);
+#else
+	return ls_delete(path);
 #endif // LS_WINDOWS
 }
