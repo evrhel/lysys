@@ -35,11 +35,11 @@ char *ls_strdir(const char *path);
 //! NULL if the path separator is not found
 char *ls_strrdir(const char *path);
 
-void ls_path_win32(char *path);
+void ls_path_win32(char *path, size_t len);
 
-void ls_path_unix(char *path);
+void ls_path_unix(char *path, size_t len);
 
-void ls_path_native(char *path);
+void ls_path_native(char *path, size_t len);
 
 //! \brief Get the directory name of a path.
 //! 

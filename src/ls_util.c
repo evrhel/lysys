@@ -285,3 +285,87 @@ size_t ls_strcbcat(char *dest, const char *src, size_t cb)
 	memcpy(dest + dest_len - 1, src, src_len + 1);
 	return len-1;
 }
+
+char ls_tolower(char c)
+{
+	if (c >= 'A' && c <= 'Z')
+		return c + ('a' - 'A');
+	return c;
+}
+
+wchar_t ls_wtolower(wchar_t c)
+{
+	if (c >= L'A' && c <= L'Z')
+		return c + (L'a' - L'A');
+	return c;
+}
+
+char ls_toupper(char c)
+{
+	if (c >= 'a' && c <= 'z')
+		return c - ('a' - 'A');
+	return c;
+}
+
+wchar_t ls_wtoupper(wchar_t c)
+{
+	if (c >= L'a' && c <= L'z')
+		return c - (L'a' - L'A');
+	return c;
+}
+
+void ls_strlower(char *str, size_t len)
+{
+	size_t i;
+
+	if (!str)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return;
+	}
+
+	for (i = 0; *str && i < len; i++)
+		str[i] = ls_tolower(str[i]);
+}
+
+void ls_wstrlower(wchar_t *str, size_t len)
+{
+	size_t i;
+
+	if (!str)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return;
+	}
+
+	for (i = 0; *str && i < len; i++)
+		str[i] = ls_wtolower(str[i]);
+}
+
+void ls_strupper(char *str, size_t len)
+{
+	size_t i;
+
+	if (!str)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return;
+	}
+
+	for (i = 0; *str && i < len; i++)
+		str[i] = ls_toupper(str[i]);
+}
+
+void ls_wstrupper(wchar_t *str, size_t len)
+{
+	size_t i;
+
+	if (!str)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return;
+	}
+
+	for (i = 0; *str && i < len; i++)
+		str[i] = ls_wtoupper(str[i]);
+}

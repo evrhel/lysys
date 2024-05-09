@@ -7,6 +7,7 @@
 #include "ls_error.h"
 #include "ls_event.h"
 #include "ls_file.h"
+#include "ls_font.h"
 #include "ls_ioutils.h"
 #include "ls_memory.h"
 #include "ls_mmap.h"

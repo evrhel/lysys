@@ -157,4 +157,20 @@ size_t ls_strcbcpy(char *dest, const char *src, size_t cb);
 //! terminator, or -1 on error
 size_t ls_strcbcat(char *dest, const char *src, size_t cb);
 
+char ls_tolower(char c);
+
+wchar_t ls_wtolower(wchar_t c);
+
+char ls_toupper(char c);
+
+wchar_t ls_wtoupper(wchar_t c);
+
+void ls_strlower(char *str, size_t len);
+
+void ls_wstrlower(wchar_t *str, size_t len);
+
+void ls_strupper(char *str, size_t len);
+
+void ls_wstrupper(wchar_t *str, size_t len);
+
 #endif // _LS_UTIL_H_

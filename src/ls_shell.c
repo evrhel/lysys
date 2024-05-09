@@ -39,32 +39,34 @@ char *ls_strrdir(const char *path)
 	return (char *)last;
 }
 
-void ls_path_win32(char *path)
+void ls_path_win32(char *path, size_t len)
 {
-	while (*path)
+	size_t i;
+
+	for (i = 0; *path && i < len; path++, i++)
 	{
 		if (*path == '/')
 			*path = '\\';
-		path++;
 	}
 }
 
-void ls_path_unix(char *path)
+void ls_path_unix(char *path, size_t len)
 {
-	while (*path)
+	size_t i;
+
+	for (i = 0; *path && i < len; path++, i++)
 	{
 		if (*path == '\\')
 			*path = '/';
-		path++;
 	}
 }
 
-void ls_path_native(char *path)
+void ls_path_native(char *path, size_t len)
 {
 #if LS_WINDOWS
-	ls_path_win32(path);
+	ls_path_win32(path, len);
 #else
-	ls_path_unix(path);
+	ls_path_unix(path, len);
 #endif // LS_WINDOWS
 }
 
