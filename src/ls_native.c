@@ -868,4 +868,4 @@ int kr_to_error(kern_return_t kr)
 }
 #endif // LS_DARWIN
 
-THREADLOCAL int _ls_errno = 0;
+LS_THREADLOCAL int _ls_errno = 0;
