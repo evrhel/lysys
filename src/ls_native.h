@@ -149,15 +149,7 @@ native_file_t ls_resolve_file(ls_handle fh);
 int kr_to_error(kern_return_t kr);
 #endif // LS_DARWIN
 
-#if LS_WINDOWS
-#define THREADLOCAL __declspec(thread)
-#define RESTRICT __restrict
-#else
-#define THREADLOCAL __thread
-#define RESTRICT restrict
-#endif // LS_WINDOWS
-
-extern THREADLOCAL int _ls_errno;
+extern LS_THREADLOCAL int _ls_errno;
 
 //! \brief Set errno and return -1 or 0 conditionally
 //! 

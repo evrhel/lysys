@@ -71,4 +71,12 @@ typedef void *ls_handle;
 #include <stdint.h>
 #include <stddef.h>
 
+#if LS_WINDOWS
+#define LS_THREADLOCAL __declspec(thread)
+#define LS_RESTRICT __restrict
+#else
+#define LS_THREADLOCAL __thread
+#define LS_RESTRICT restrict
+#endif // LS_WINDOWS
+
 #endif

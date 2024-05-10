@@ -100,7 +100,7 @@ void cond_destroy(ls_cond_t *cond)
 #endif // LS_WINDOWS
 }
 
-int cond_wait(ls_cond_t *RESTRICT cond, ls_lock_t *RESTRICT lock, unsigned long ms)
+int cond_wait(ls_cond_t *LS_RESTRICT cond, ls_lock_t *LS_RESTRICT lock, unsigned long ms)
 {
 #if LS_WINDOWS
     if (!SleepConditionVariableCS(cond, lock, ms))
