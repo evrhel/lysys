@@ -72,7 +72,7 @@ void cond_destroy(ls_cond_t *cond);
 //! \param ms The maximum number of milliseconds to wait
 //!
 //! \return 0 on success, 1 on timeout
-int cond_wait(ls_cond_t *RESTRICT cond, ls_lock_t *RESTRICT lock, unsigned long ms);
+int cond_wait(ls_cond_t *LS_RESTRICT cond, ls_lock_t *LS_RESTRICT lock, unsigned long ms);
 
 //! \brief Wake a signal waiting thread
 //!
