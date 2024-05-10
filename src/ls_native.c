@@ -6,96 +6,11 @@
 #include <lysys/ls_file.h>
 #include <lysys/ls_core.h>
 #include <lysys/ls_proc.h>
+#include <lysys/ls_string.h>
 
 #include "ls_buffer.h"
 
 #ifdef LS_WINDOWS
-
-size_t ls_utf8_to_wchar_buf(const char *utf8, wchar_t *buf, size_t cchbuf)
-{
-	int cch;
-
-	if (!utf8 || !buf != !cchbuf)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
-	if (cchbuf > INT32_MAX)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
-	cch = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf, (int)cchbuf);
-	if (cch == 0)
-		return ls_set_errno_win32(GetLastError());
-
-	if (!cchbuf)
-		return (size_t)cch;
-
-	return (size_t)cch - 1; // exclude null terminator
-}
-
-wchar_t *ls_utf8_to_wchar(const char *utf8)
-{
-	wchar_t *wstr;
-	size_t len;
-
-	len = ls_utf8_to_wchar_buf(utf8, NULL, 0);
-	if (len == -1)
-		return NULL;
-
-	wstr = ls_malloc(len * sizeof(wchar_t));
-	if (!wstr)
-		return NULL;
-
-	len = ls_utf8_to_wchar_buf(utf8, wstr, len + 1);
-	if (len == -1)
-	{
-		ls_free(wstr);
-		return NULL;
-	}
-
-	return wstr;
-}
-
-size_t ls_wchar_to_utf8_buf(const wchar_t *wstr, char *buf, size_t cbbuf)
-{
-	int cb;
-
-	if (!wstr || !buf != !cbbuf)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
-	if (cbbuf > INT32_MAX)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
-	cb = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, buf, (int)cbbuf, NULL, NULL);
-	if (cb == 0)
-		return ls_set_errno_win32(GetLastError());
-
-	if (!cbbuf)
-		return (size_t)cb;
-
-	return (size_t)cb - 1; // exclude null terminator
-}
-
-char *ls_wchar_to_utf8(const wchar_t *wstr)
-{
-	char *utf8;
-	size_t len;
-
-	len = ls_wchar_to_utf8_buf(wstr, NULL, 0);
-	if (len == -1)
-		return NULL;
-
-	utf8 = ls_malloc(len);
-	if (!utf8)
-		return NULL;
-
-	len = ls_wchar_to_utf8_buf(wstr, utf8, len);
-	if (len == -1)
-	{
-		ls_free(utf8);
-		return NULL;
-	}
-
-	return utf8;
-}
 
 int ls_match_string(LPCWSTR lpStr, LPCWSTR lpPattern)
 {
@@ -679,14 +594,14 @@ int ls_errno_to_error(int err)
 #ifdef ENOPKG
 	case ENOPKG: return LS_NOT_FOUND;
 #endif // ENOPKG
-            
+			
 	case EBADMSG: return LS_INVALID_STATE;
 	case EOVERFLOW: return LS_OUT_OF_RANGE;
 
 #ifdef EBADFD
 	case EBADFD: return LS_INVALID_HANDLE;
 #endif // EBADFD
-            
+			
 	case EOPNOTSUPP: return LS_NOT_SUPPORTED;
 
 	case ENETDOWN: return LS_INVALID_STATE;
@@ -848,10 +763,10 @@ native_file_t ls_resolve_file(ls_handle fh)
 #if LS_DARWIN
 int kr_to_error(kern_return_t kr)
 {
-    switch (kr)
-    {
+	switch (kr)
+	{
 	default: return LS_UNKNOWN_ERROR;
-    case KERN_SUCCESS: return 0;
+	case KERN_SUCCESS: return 0;
 	case KERN_INVALID_ADDRESS: return LS_INVALID_ARGUMENT;
 	case KERN_PROTECTION_FAILURE: return LS_ACCESS_DENIED;
 	case KERN_NO_SPACE: return LS_OUT_OF_MEMORY;
@@ -949,7 +864,7 @@ int kr_to_error(kern_return_t kr)
 	case kIOReturnIsoTooNew: return LS_INVALID_STATE;
 	case kIOReturnNotFound: return LS_NOT_FOUND;
 	case kIOReturnInvalid: return LS_INVALID_ARGUMENT;
-    }
+	}
 }
 #endif // LS_DARWIN
 

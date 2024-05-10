@@ -132,7 +132,7 @@ static xcb_atom_t get_atom_for_format(struct clipboard *self,
         return get_atom(self, TEXT_FORMATS[0]);
 
     entry = (entry_t *)fmt;
-    return entry->value.atom;
+    return entry->value.u32;
 }
 
 //! \brief Set ourselves as the owner of the clipboard
@@ -488,7 +488,7 @@ static int handle_selection_request(struct clipboard *self,
         
         ent = self->data->entries;
         for (i = 3; ent; ent = ent->next, i++)
-            atoms[i] = ent->key.atom;
+            atoms[i] = ent->key.u32;
 
         xcb_change_property(self->conn, XCB_PROP_MODE_REPLACE,
             evt->requestor, evt->property, get_atom(self, ATOM_ATOM),

@@ -1,6 +1,7 @@
 #include <lysys/ls_watch.h>
 
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include <string.h>
 #include <assert.h>
@@ -41,9 +42,9 @@ struct notif
 
 struct ls_watch_event_imp
 {
-    struct ls_watch_event_imp *next;
-    size_t cb; // size of event
-    struct ls_watch_event event;
+	struct ls_watch_event_imp *next;
+	size_t cb; // size of event
+	struct ls_watch_event event;
 };
 
 struct ls_watch
@@ -67,16 +68,16 @@ struct ls_watch
 
 	struct ls_watch_event_imp *front, *back;
 #elif LS_DARWIN
-    FSEventStreamRef stream;
-    dispatch_queue_t queue;
-    ls_lock_t lock;
-    ls_cond_t cond;
-    
-    int flags;
-    
-    int error;
-    
-    struct ls_watch_event_imp *front, *back;
+	FSEventStreamRef stream;
+	dispatch_queue_t queue;
+	ls_lock_t lock;
+	ls_cond_t cond;
+	
+	int flags;
+	
+	int error;
+	
+	struct ls_watch_event_imp *front, *back;
 #else
 	int notify; // inotify instance
 	int watch; // inotify watch
@@ -385,23 +386,23 @@ static DWORD CALLBACK ls_watch_worker(LPVOID lpParam)
 #elif LS_DARWIN
 
 static void ls_on_fs_event(ConstFSEventStreamRef streamRef, void *clientCallBackInfo,
-    size_t numEvents, void *eventPaths, const FSEventStreamEventFlags *eventFlags,
-    const FSEventStreamEventId *eventIds)
+	size_t numEvents, void *eventPaths, const FSEventStreamEventFlags *eventFlags,
+	const FSEventStreamEventId *eventIds)
 {
-    struct ls_watch *w = clientCallBackInfo;
-    size_t i;
+	struct ls_watch *w = clientCallBackInfo;
+	size_t i;
 	char **paths = eventPaths;
-    
-    for (i = 0; i < numEvents; i++)
-    {
-        // TODO: need to find the actual change
-    }
-    
-    // TODO: remove when implemented
-    lock_lock(&w->lock);
-    w->error = LS_NOT_IMPLEMENTED;
-    cond_broadcast(&w->cond);
-    lock_unlock(&w->lock);
+	
+	for (i = 0; i < numEvents; i++)
+	{
+		// TODO: need to find the actual change
+	}
+	
+	// TODO: remove when implemented
+	lock_lock(&w->lock);
+	w->error = LS_NOT_IMPLEMENTED;
+	cond_broadcast(&w->cond);
+	lock_unlock(&w->lock);
 }
 
 #else
@@ -607,11 +608,11 @@ static void ls_watch_dtor(struct ls_watch *w)
 
 	lock_unlock(&w->lock);
 #elif LS_DARWIN
-    FSEventStreamRelease(w->stream);
-    dispatch_release(w->queue);
-    cond_destroy(&w->cond);
-    lock_destroy(&w->lock);
-    ls_free(w);
+	FSEventStreamRelease(w->stream);
+	dispatch_release(w->queue);
+	cond_destroy(&w->cond);
+	lock_destroy(&w->lock);
+	ls_free(w);
 #else
 	struct ls_watch_event_imp *e, *next;
 
@@ -758,106 +759,106 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 
 	return w;
 #elif LS_DARWIN
-    struct ls_watch *w;
-    int rc;
-    FSEventStreamContext ctx;
-    CFStringRef dirsr;
-    CFArrayRef paths;
-    Boolean b;
-    
-    w = ls_handle_create(&WatchClass);
-    if (!w)
-        return NULL;
-    
-    rc = lock_init(&w->lock);
-    if (rc == -1)
-    {
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    rc = cond_init(&w->cond);
-    if (rc == -1)
-    {
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    dirsr = CFStringCreateWithCString(NULL, dir, kCFStringEncodingUTF8);
-    if (!dirsr)
-    {
-        cond_destroy(&w->cond);
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    paths = CFArrayCreate(NULL, (const void **)&dirsr, 1, &kCFTypeArrayCallBacks);
-    if (!paths)
-    {
-        CFRelease(dirsr);
-        cond_destroy(&w->cond);
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    CFRelease(dirsr), dirsr = NULL;
+	struct ls_watch *w;
+	int rc;
+	FSEventStreamContext ctx;
+	CFStringRef dirsr;
+	CFArrayRef paths;
+	Boolean b;
+	
+	w = ls_handle_create(&WatchClass);
+	if (!w)
+		return NULL;
+	
+	rc = lock_init(&w->lock);
+	if (rc == -1)
+	{
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	rc = cond_init(&w->cond);
+	if (rc == -1)
+	{
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	dirsr = CFStringCreateWithCString(NULL, dir, kCFStringEncodingUTF8);
+	if (!dirsr)
+	{
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	paths = CFArrayCreate(NULL, (const void **)&dirsr, 1, &kCFTypeArrayCallBacks);
+	if (!paths)
+	{
+		CFRelease(dirsr);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	CFRelease(dirsr), dirsr = NULL;
 
-    ctx.version = 0;
-    ctx.info = w;
-    ctx.retain = NULL;
-    ctx.release = NULL;
-    ctx.copyDescription = NULL;
-    
-    // create event queue
-    w->queue = dispatch_queue_create(dir, DISPATCH_QUEUE_CONCURRENT);
-    if (!w->queue)
-    {
-        cond_destroy(&w->cond);
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
+	ctx.version = 0;
+	ctx.info = w;
+	ctx.retain = NULL;
+	ctx.release = NULL;
+	ctx.copyDescription = NULL;
+	
+	// create event queue
+	w->queue = dispatch_queue_create(dir, DISPATCH_QUEUE_CONCURRENT);
+	if (!w->queue)
+	{
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
    
-    // Create event stream
-    w->stream = FSEventStreamCreate(NULL,
-                                    &ls_on_fs_event,
-                                    &ctx,
-                                    paths,
-                                    kFSEventStreamEventIdSinceNow,
-                                    0.1,
-                                    kFSEventStreamCreateFlagNone);
-    
-    CFRelease(paths), paths = NULL;
-    
-    if (!w->stream)
-    {
-        dispatch_release(w->queue);
-        cond_destroy(&w->cond);
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    // set the event queue for the fs stream
-    FSEventStreamSetDispatchQueue(w->stream, w->queue);
-    
-    // start recieving events
-    b = FSEventStreamStart(w->stream);
-    if (!b)
-    {
-        FSEventStreamRelease(w->stream);
-        dispatch_release(w->queue);
-        cond_destroy(&w->cond);
-        lock_destroy(&w->lock);
-        ls_handle_dealloc(w);
-        return NULL;
-    }
-    
-    return w;
-    
+	// Create event stream
+	w->stream = FSEventStreamCreate(NULL,
+									&ls_on_fs_event,
+									&ctx,
+									paths,
+									kFSEventStreamEventIdSinceNow,
+									0.1,
+									kFSEventStreamCreateFlagNone);
+	
+	CFRelease(paths), paths = NULL;
+	
+	if (!w->stream)
+	{
+		dispatch_release(w->queue);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	// set the event queue for the fs stream
+	FSEventStreamSetDispatchQueue(w->stream, w->queue);
+	
+	// start recieving events
+	b = FSEventStreamStart(w->stream);
+	if (!b)
+	{
+		FSEventStreamRelease(w->stream);
+		dispatch_release(w->queue);
+		cond_destroy(&w->cond);
+		lock_destroy(&w->lock);
+		ls_handle_dealloc(w);
+		return NULL;
+	}
+	
+	return w;
+	
 #else
 	struct ls_watch *w;
 	int rc;

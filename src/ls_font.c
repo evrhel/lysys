@@ -1,8 +1,10 @@
 #include <lysys/ls_font.h>
 
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include <math.h>
+#include <string.h>
 
 #include "ls_util.h"
 #include "ls_native.h"

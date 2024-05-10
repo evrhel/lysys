@@ -3,6 +3,7 @@
 #include <lysys/ls_shell.h>
 #include <lysys/ls_file.h>
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -169,17 +170,17 @@ size_t ls_getenv_buf(const char *name, char *buf, size_t size)
 
 	return r;
 #else
-    const char *env;
-    size_t len;
-        
-    env = getenv(name);
-    if (!env)
+	const char *env;
+	size_t len;
+		
+	env = getenv(name);
+	if (!env)
 	{
 		ls_set_errno(LS_NOT_FOUND);
-        return -1;
+		return -1;
 	}
-    
-    len = strlen(env) + 1;
+	
+	len = strlen(env) + 1;
 	if (size == 0)
 		return len;
 
@@ -188,8 +189,8 @@ size_t ls_getenv_buf(const char *name, char *buf, size_t size)
 		ls_set_errno(LS_BUFFER_TOO_SMALL);
 		return -1;
 	}
-    
-    memcpy(buf, env, len);
+	
+	memcpy(buf, env, len);
 
 	return len - 1;
 #endif // LS_WINDOWS
@@ -372,49 +373,49 @@ size_t ls_which(const char *path, char *buf, size_t size)
 
 	return r;
 #else
-    char *syspath, *string;
-    char *token;
-    int rc;
-    char fullpath[PATH_MAX];
-    size_t len = 0;
-        
-    syspath = ls_getenv("HOME");
-    if (!syspath)
-        return -1;
-    
-    string = syspath;
-    while ((token = strsep(&string, ":")) != NULL)
-    {
-        strncpy(fullpath, token, PATH_MAX);
-        strncat(fullpath, path, PATH_MAX);
-        
-        rc = access(fullpath, F_OK);
-        if (rc == 0)
-        {
-            len = strlen(fullpath) + 1;
+	char *syspath, *string;
+	char *token;
+	int rc;
+	char fullpath[PATH_MAX];
+	size_t len = 0;
+		
+	syspath = ls_getenv("HOME");
+	if (!syspath)
+		return -1;
+	
+	string = syspath;
+	while ((token = strsep(&string, ":")) != NULL)
+	{
+		strncpy(fullpath, token, PATH_MAX);
+		strncat(fullpath, path, PATH_MAX);
+		
+		rc = access(fullpath, F_OK);
+		if (rc == 0)
+		{
+			len = strlen(fullpath) + 1;
 			if (size == 0)
 			{
 				ls_free(syspath);
 				return len;
 			}
 
-            if (len > size)
+			if (len > size)
 			{
 				ls_set_errno(LS_BUFFER_TOO_SMALL);
 				ls_free(syspath);
 				return -1;
 			}
 
-            memcpy(buf, fullpath, len);
+			memcpy(buf, fullpath, len);
 
 			ls_free(syspath);
 
 			return len - 1;
-        }
-    }
-    
+		}
+	}
+	
 	ls_free(syspath);
-    
+	
 	ls_set_errno(LS_FILE_NOT_FOUND);
 	return -1;
 #endif // LS_WINDOWS
@@ -454,45 +455,45 @@ size_t ls_abspath(const char *path, char *buf, size_t size)
 
 	return rc - 1;
 #else
-    size_t len, wdlen;
+	size_t len, wdlen;
 	size_t full_size;
-        
+		
 	if (size == 0 && buf != NULL)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 	if (buf == NULL && size != 0)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-    len = strlen(path) + 1;
+	len = strlen(path) + 1;
 	if (len == 1)
 		return 0;
 
 	if (size == 0)
 		return len;
-    
-    if (path[0] == '/')
-    {
-        if (full_size > size)
-            return ls_set_errno(LS_BUFFER_TOO_SMALL);
+	
+	if (path[0] == '/')
+	{
+		if (full_size > size)
+			return ls_set_errno(LS_BUFFER_TOO_SMALL);
 
-        memcpy(buf, path, len);
-        return len;
-    }
-    
-    wdlen = ls_cwd(buf, size);
-    if (wdlen == -1)
-        return ls_set_errno(ls_errno_to_error(errno));
+		memcpy(buf, path, len);
+		return len;
+	}
+	
+	wdlen = ls_cwd(buf, size);
+	if (wdlen == -1)
+		return ls_set_errno(ls_errno_to_error(errno));
 		
 	full_size = wdlen + 1 + len; // wd + '/' + path
 	if (size == 0)
 		return full_size;
-    
+	
 	if (full_size > size)
 		return ls_set_errno(LS_BUFFER_TOO_SMALL);
 
 	buf[wdlen] = '/';
 	memcpy(buf + wdlen + 1, path, len);
 
-    return full_size - 1;
+	return full_size - 1;
 #endif // LS_WINDOWS
 }
 
