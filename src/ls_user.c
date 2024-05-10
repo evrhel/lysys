@@ -9,6 +9,7 @@
 #include <lysys/ls_file.h>
 #include <lysys/ls_stat.h>
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include "ls_native.h"
 

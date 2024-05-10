@@ -1,6 +1,7 @@
 #include <lysys/ls_clipboard.h>
 
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include <string.h>
 
@@ -158,7 +159,7 @@ int ls_set_clipboard_text(const char *text)
 {
 	if (!text)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
-    return ls_set_clipboard_data(LS_CF_TEXT, text, strlen(text));
+	return ls_set_clipboard_data(LS_CF_TEXT, text, strlen(text));
 }
 
 int ls_clear_clipboard_data(void)

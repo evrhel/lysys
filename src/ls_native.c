@@ -6,6 +6,7 @@
 #include <lysys/ls_file.h>
 #include <lysys/ls_core.h>
 #include <lysys/ls_proc.h>
+#include <lysys/ls_string.h>
 
 #include "ls_buffer.h"
 
@@ -593,14 +594,14 @@ int ls_errno_to_error(int err)
 #ifdef ENOPKG
 	case ENOPKG: return LS_NOT_FOUND;
 #endif // ENOPKG
-            
+			
 	case EBADMSG: return LS_INVALID_STATE;
 	case EOVERFLOW: return LS_OUT_OF_RANGE;
 
 #ifdef EBADFD
 	case EBADFD: return LS_INVALID_HANDLE;
 #endif // EBADFD
-            
+			
 	case EOPNOTSUPP: return LS_NOT_SUPPORTED;
 
 	case ENETDOWN: return LS_INVALID_STATE;
@@ -762,10 +763,10 @@ native_file_t ls_resolve_file(ls_handle fh)
 #if LS_DARWIN
 int kr_to_error(kern_return_t kr)
 {
-    switch (kr)
-    {
+	switch (kr)
+	{
 	default: return LS_UNKNOWN_ERROR;
-    case KERN_SUCCESS: return 0;
+	case KERN_SUCCESS: return 0;
 	case KERN_INVALID_ADDRESS: return LS_INVALID_ARGUMENT;
 	case KERN_PROTECTION_FAILURE: return LS_ACCESS_DENIED;
 	case KERN_NO_SPACE: return LS_OUT_OF_MEMORY;
@@ -863,7 +864,7 @@ int kr_to_error(kern_return_t kr)
 	case kIOReturnIsoTooNew: return LS_INVALID_STATE;
 	case kIOReturnNotFound: return LS_NOT_FOUND;
 	case kIOReturnInvalid: return LS_INVALID_ARGUMENT;
-    }
+	}
 }
 #endif // LS_DARWIN
 

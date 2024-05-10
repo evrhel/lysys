@@ -4,6 +4,7 @@
 #include <lysys/ls_memory.h>
 #include <lysys/ls_shell.h>
 #include <lysys/ls_stat.h>
+#include <lysys/ls_string.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -410,15 +411,15 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 
 	lock_lock(&aio->lock);
 	
-    while (aio->status == LS_AIO_PENDING)
-    {
-        rc = cond_wait(&aio->cond, &aio->lock, ms);
-        if (rc == 1)
-        {
-            lock_unlock(&aio->lock);
-            return 1;
-        }
-    }
+	while (aio->status == LS_AIO_PENDING)
+	{
+		rc = cond_wait(&aio->cond, &aio->lock, ms);
+		if (rc == 1)
+		{
+			lock_unlock(&aio->lock);
+			return 1;
+		}
+	}
 
 	lock_unlock(&aio->lock);
 
@@ -562,13 +563,13 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	if (rc == -1)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return -1;
 	}
 
 	aio->status = LS_AIO_PENDING;
 	
-    lock_unlock(&aio->lock);
+	lock_unlock(&aio->lock);
 
 	return 0;
 #endif // LS_WINDOWS
@@ -621,7 +622,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 
 	if (aio->status == LS_AIO_PENDING)
 	{
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return ls_set_errno(LS_BUSY);
 	}
 
@@ -633,13 +634,13 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	if (rc == -1)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return -1;
 	}
 
 	aio->status = LS_AIO_PENDING;
 	
-    lock_unlock(&aio->lock);
+	lock_unlock(&aio->lock);
 
 	return 0;
 #endif // LS_WINDOWS
@@ -687,7 +688,7 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 		if (aio->bytes_transferred == -1)
 		{
 			// no requests have been made yet
-            lock_unlock(&aio->lock);
+			lock_unlock(&aio->lock);
 			return ls_set_errno(LS_NOT_READY);
 		}
 
@@ -695,11 +696,11 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 	}
 	else if (status == LS_AIO_ERROR)
 	{
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return ls_set_errno(aio->error);
 	}
 
-    lock_unlock(&aio->lock);
+	lock_unlock(&aio->lock);
 
 	return status;
 #endif // LS_WINDOWS
@@ -734,28 +735,28 @@ int ls_aio_cancel(ls_handle aioh)
 	if (rc == -1)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return -1;
 	}
 
 	if (rc == AIO_CANCELED)
 	{
 		ls_aio_update_status(aio, LS_AIO_CANCELED);
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return 0;
 	}
 
 	if (rc == AIO_ALLDONE)
 	{
 		ls_aio_update_status(aio, LS_AIO_COMPLETED);
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 		return 0;
 	}
 
 	if (rc == AIO_NOTCANCELED)
 	{
 		rc = ls_aio_check_error(aio);
-        lock_unlock(&aio->lock);
+		lock_unlock(&aio->lock);
 
 		if (rc == -1)
 		{
@@ -816,21 +817,21 @@ int ls_copy(const char *old_path, const char *new_path)
 		return ls_set_errno_win32(GetLastError());
 	return 0;
 #elif LS_DARWIN
-    int rc;
-    copyfile_state_t s;
+	int rc;
+	copyfile_state_t s;
 
 	if (!old_path || !new_path)
 		return -1;
-    
-    s = copyfile_state_alloc();
-    if (!s)
-        return -1;
-    
-    rc = copyfile(old_path, new_path, s, COPYFILE_STAT | COPYFILE_DATA);
-    
-    copyfile_state_free(s);
-    
-    return rc == 0 ? 0 : -1;
+	
+	s = copyfile_state_alloc();
+	if (!s)
+		return -1;
+	
+	rc = copyfile(old_path, new_path, s, COPYFILE_STAT | COPYFILE_DATA);
+	
+	copyfile_state_free(s);
+	
+	return rc == 0 ? 0 : -1;
 #else
 	int src_fd, dst_fd;
 	ssize_t r;

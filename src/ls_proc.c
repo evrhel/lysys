@@ -1,6 +1,7 @@
 #include <lysys/ls_proc.h>
 
 #include <lysys/ls_core.h>
+#include <lysys/ls_string.h>
 
 #include "ls_native.h"
 #include "ls_handle.h"

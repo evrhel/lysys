@@ -5,6 +5,7 @@
 #include <lysys/ls_file.h>
 #include <lysys/ls_shell.h>
 #include <lysys/ls_watch.h>
+#include <lysys/ls_string.h>
 
 #include <stdlib.h>
 #include <memory.h>
