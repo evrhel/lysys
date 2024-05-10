@@ -19,6 +19,7 @@ set(LYSYS_SOURCES
     ${src}/ls_proc.c
     ${src}/ls_shell.c
     ${src}/ls_stat.c
+    ${src}/ls_string.c
     ${src}/ls_sync.c
     ${src}/ls_sync_util.c
     ${src}/ls_sysinfo.c

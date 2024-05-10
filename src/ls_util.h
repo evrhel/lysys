@@ -20,11 +20,6 @@ typedef union any
     uint64_t u64;
     float f;
     double d;
-
-#if LS_LINUX
-    xcb_atom_t atom;
-#endif // LS_LINUX
-
 } any_t;
 
 #define ANY_PTR(x) ((any_t){ .ptr = (x) })

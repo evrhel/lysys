@@ -3,6 +3,7 @@
 #include <lysys/ls_core.h>
 
 #include <math.h>
+#include <string.h>
 
 #include "ls_util.h"
 #include "ls_native.h"
