@@ -18,7 +18,7 @@ char *ls_strdir(const char *path)
 
 	while (*path)
 	{
-		if (*path != '/' && *path != '\\')
+		if (*path == '/' || *path == '\\')
 			return (char *)path;
 		path++;
 	}
