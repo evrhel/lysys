@@ -40,12 +40,45 @@ struct ls_proc_start_info
 //! The process is waited on in the background and resources are
 //! released when the process completes.
 //! 
-//! \param path Path to the executable image.
+//! \param path Path to the executable image or name of file on the PATH.
 //! \param argv NULL-terminated array of arguments.
 //! \param info Additional information for starting the process. Can be NULL.
 //! 
 //! \return Handle to the process or NULL on failure.
 ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_proc_start_info *info);
+
+//! \brief Start a process as a shell command.
+//! 
+//! Same as ls_proc_start, but the process is run as if it were started
+//! using a command shell. The calling environment is retained, unless
+//! specified otherwise in the info structure.
+//! 
+//! \param path Path to the executable image or name of file on the PATH.
+//! \param argv NULL-terminated array of arguments.
+//! \param info Additional information for starting the process. Can be NULL.
+//! 
+//! \return Handle to the process or NULL on failure.
+ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct ls_proc_start_info *info);
+
+//! \brief Start a process and wait for it to complete.
+//! 
+//! \param path Path to the executable image or name of file on the PATH.
+//! \param argv NULL-terminated array of arguments.
+//! \param info Additional information for starting the process. Can be NULL.
+//! 
+//! \return The exit code of the process, or -1 on failure. The process may
+//! have returned an exit code of -1, so check ls_errno for more information.
+int ls_proc_start_wait(const char *path, const char *argv[], const struct ls_proc_start_info *info);
+
+//! \brief Start a process as a shell command and wait for it to complete.
+//!	
+//! \param path Path to the executable image or name of file on the PATH.
+//! \param argv NULL-terminated array of arguments.
+//!	\param info Additional information for starting the process. Can be NULL.
+//! 
+//! \return The exit code of the process, or -1 on failure. The process may
+//! have returned an exit code of -1, so check ls_errno for more information.
+int ls_proc_start_shell_wait(const char *path, const char *argv[], const struct ls_proc_start_info *info);
 
 //! \brief Open a process.
 //! 

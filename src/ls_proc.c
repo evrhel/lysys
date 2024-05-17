@@ -2,6 +2,7 @@
 
 #include <lysys/ls_core.h>
 #include <lysys/ls_string.h>
+#include <lysys/ls_shell.h>
 
 #include "ls_native.h"
 #include "ls_handle.h"
@@ -186,14 +187,12 @@ static size_t ls_image_name(HANDLE hProcess, char *out, size_t size, char **name
 }
 #endif
 
-#if LS_POSIX
 static size_t salen(const char *const *arr)
 {
 	size_t n = 0;
 	for (; *arr; arr++) n++;
 	return n;
 }
-#endif // LS_POSIX
 
 ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_proc_start_info *info)
 {
@@ -288,6 +287,105 @@ generic_error:
 	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return NULL;
 #endif // LS_WINDOWS
+}
+
+ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct ls_proc_start_info *info)
+{
+#if LS_WINDOWS
+	char cmd[MAX_PATH];
+	size_t len;
+	size_t argv_len;
+	char **new_argv;
+	size_t i;
+	ls_handle ph;
+
+	if (!path)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	len = ls_getenv_buf("COMSPEC", cmd, sizeof(cmd));
+	if (len == -1)
+	{
+		ls_set_errno(LS_NOT_FOUND);
+		return NULL;
+	}
+
+	argv_len = argv ? salen(argv) : 0;
+	new_argv = ls_malloc((argv_len + 2) * sizeof(char *));
+	if (!new_argv)
+		return NULL;
+
+	new_argv[0] = "/C";
+	for (i = 0; i < argv_len; i++)
+		new_argv[i + 1] = argv[i];
+	new_argv[argv_len + 1] = NULL;
+
+	ph = ls_proc_start(cmd, new_argv, info);
+
+	ls_free(new_argv);
+
+	return ph;
+#else
+	ls_set_errno(LS_NOT_IMPLEMENTED);
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+int ls_proc_start_wait(const char *path, const char *argv[], const struct ls_proc_start_info *info)
+{
+	ls_handle ph;
+	int rc;
+	int exit_code;
+
+	_ls_errno = 0;
+
+	ph = ls_proc_start(path, argv, info);
+	if (!ph)
+		return -1;
+
+	rc = ls_wait(ph);
+	if (rc == -1)
+	{
+		rc = _ls_errno;
+		ls_close(ph);
+		return ls_set_errno(rc);
+	}
+
+	rc = ls_proc_exit_code(ph, &exit_code);
+	if (rc == -1)
+		exit_code = -1;
+
+	ls_close(ph);
+
+	return exit_code;
+}
+
+int ls_proc_start_shell_wait(const char *path, const char *argv[], const struct ls_proc_start_info *info)
+{
+	ls_handle ph;
+	int rc;
+	int exit_code;
+
+	_ls_errno = 0;
+
+	ph = ls_proc_start_shell(path, argv, info);
+	if (!ph)
+		return -1;
+
+	rc = ls_wait(ph);
+	if (rc == -1)
+	{
+		rc = _ls_errno;
+		ls_close(ph);
+		return ls_set_errno(rc);
+	}
+
+	rc = ls_proc_exit_code(ph, &exit_code);
+	if (rc == -1)
+		exit_code = -1;
+
+	ls_close(ph);
+
+	return exit_code;
 }
 
 ls_handle ls_proc_open(unsigned long pid)

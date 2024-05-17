@@ -991,7 +991,8 @@ int ls_createdirs(const char *path)
 	if (!tmp)
 		return -1;
 
-	while ((cur = ls_strdir(tmp)))
+	cur = tmp;
+	while ((cur = ls_strdir(cur)))
 	{
 		*cur = 0;
 		rc = ls_stat(tmp, &st);
