@@ -16,9 +16,14 @@ char *ls_strdir(const char *path)
 		return NULL;
 	}
 
-	while (*path && *path != '/' && *path != '\\')
+	while (*path)
+	{
+		if (*path != '/' && *path != '\\')
+			return (char *)path;
 		path++;
-	return (char *)path;
+	}
+
+	return NULL;
 }
 
 char *ls_strrdir(const char *path)
