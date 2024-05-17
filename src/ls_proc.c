@@ -295,7 +295,7 @@ ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct
 	char cmd[MAX_PATH];
 	size_t len;
 	size_t argv_len;
-	char **new_argv;
+	const char **new_argv;
 	size_t i;
 	ls_handle ph;
 
