@@ -157,7 +157,13 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 	if (rc == -1) goto done;
 
 	// append path
+	rc = ls_buffer_put_wchar(&buf, L'\"');
+	if (rc == -1) goto done;
+
 	rc = ls_append_escaped(&buf, wpath);
+	if (rc == -1) goto done;
+
+	rc = ls_buffer_put_wchar(&buf, L'\"');
 	if (rc == -1) goto done;
 
 	// append args

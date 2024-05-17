@@ -300,7 +300,10 @@ ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct
 	ls_handle ph;
 
 	if (!path)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
 
 	len = ls_getenv_buf("COMSPEC", cmd, sizeof(cmd));
 	if (len == -1)
