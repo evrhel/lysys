@@ -120,6 +120,7 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 	size_t len;
 	int rc = 0;
 	int err;
+	PWCHAR pSpace;
 
 	if (!path)
 	{
@@ -157,13 +158,7 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 	if (rc == -1) goto done;
 
 	// append path
-	rc = ls_buffer_put_wchar(&buf, L'\"');
-	if (rc == -1) goto done;
-
-	rc = ls_append_escaped(&buf, wpath);
-	if (rc == -1) goto done;
-
-	rc = ls_buffer_put_wchar(&buf, L'\"');
+	ls_buffer_write(&buf, wpath, (len - 1) * sizeof(WCHAR));
 	if (rc == -1) goto done;
 
 	// append args
@@ -172,14 +167,23 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 		rc = ls_buffer_put_wchar(&buf, L' ');
 		if (rc == -1) goto done;
 
-		rc = ls_buffer_put_wchar(&buf, L'\"');
-		if (rc == -1) goto done;
+		pSpace = wcschr(*warg, L' ');
+		if (pSpace)
+		{
+			rc = ls_buffer_put_wchar(&buf, L'\"');
+			if (rc == -1) goto done;
 
-		rc = ls_append_escaped(&buf, *warg);
-		if (rc == -1) goto done;
+			rc = ls_append_escaped(&buf, *warg);
+			if (rc == -1) goto done;
 
-		rc = ls_buffer_put_wchar(&buf, L'\"');
-		if (rc == -1) goto done;
+			rc = ls_buffer_put_wchar(&buf, L'\"');
+			if (rc == -1) goto done;
+		}
+		else
+		{
+			rc = ls_buffer_write(&buf, *warg, wcslen(*warg) * sizeof(WCHAR));
+			if (rc == -1) goto done;
+		}
 	}
 
 	// null terminator
