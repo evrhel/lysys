@@ -75,9 +75,36 @@ DWORD ls_get_flags_and_attributes(int access)
 	return dwFlagsAndAttributes;
 }
 
+static int is_whitespace(WCHAR c)
+{
+	return c == L' ' || c == L'\t' || c == L'\n' || c == L'\r';
+}
+
+static int has_whitespace(LPWSTR lpStr)
+{
+	WCHAR c;
+
+	while ((c = *lpStr))
+	{
+		if (is_whitespace(c))
+			return 1;
+		lpStr++;
+	}
+
+	return 0;
+}
+
 int ls_append_escaped(struct ls_buffer *buf, LPWSTR str)
 {
 	WCHAR c;
+
+	if (!has_whitespace(str))
+	{
+		if (ls_buffer_write(buf, str, wcslen(str) * sizeof(WCHAR)) == -1) return -1;
+		return 0;
+	}
+
+	if (ls_buffer_put_wchar(buf, L'\"') == -1) return -1;
 
 	for (; *str; ++str)
 	{
@@ -107,6 +134,8 @@ int ls_append_escaped(struct ls_buffer *buf, LPWSTR str)
 		}
 	}
 
+	if (ls_buffer_put_wchar(buf, L'\"') == -1) return -1;
+
 	return 0;
 }
 
@@ -120,7 +149,8 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 	size_t len;
 	int rc = 0;
 	int err;
-	PWCHAR pSpace;
+
+	_ls_errno = 0;
 
 	if (!path)
 	{
@@ -153,12 +183,12 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 		}
 	}
 	
-	// we will need at least len * sizeof(WCHAR) bytes
-	rc = ls_buffer_reserve(&buf, len * sizeof(WCHAR));
+	// 1024 should be enough for most cases, will grow if needed
+	rc = ls_buffer_reserve(&buf, 1024);
 	if (rc == -1) goto done;
 
 	// append path
-	ls_buffer_write(&buf, wpath, (len - 1) * sizeof(WCHAR));
+	ls_append_escaped(&buf, wpath);
 	if (rc == -1) goto done;
 
 	// append args
@@ -167,23 +197,8 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 		rc = ls_buffer_put_wchar(&buf, L' ');
 		if (rc == -1) goto done;
 
-		pSpace = wcschr(*warg, L' ');
-		if (pSpace)
-		{
-			rc = ls_buffer_put_wchar(&buf, L'\"');
-			if (rc == -1) goto done;
-
-			rc = ls_append_escaped(&buf, *warg);
-			if (rc == -1) goto done;
-
-			rc = ls_buffer_put_wchar(&buf, L'\"');
-			if (rc == -1) goto done;
-		}
-		else
-		{
-			rc = ls_buffer_write(&buf, *warg, wcslen(*warg) * sizeof(WCHAR));
-			if (rc == -1) goto done;
-		}
+		rc = ls_append_escaped(&buf, *warg);
+		if (rc == -1) goto done;
 	}
 
 	// null terminator
