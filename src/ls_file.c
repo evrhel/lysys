@@ -993,7 +993,7 @@ int ls_createdirs(const char *path)
 	token = tmp;
 	while ((token = ls_strdir(token)))
 	{
-		old = *token == 0;
+		old = *token;
 
 		*token = 0;
 		rc = ls_stat(tmp, &st);
