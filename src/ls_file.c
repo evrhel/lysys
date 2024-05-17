@@ -980,40 +980,44 @@ int ls_createdir(const char *path)
 
 int ls_createdirs(const char *path)
 {
-	char *tmp, *cur;
+	char *tmp;
+	char *token;
 	struct ls_stat st;
-	int rc = -1;
-
-	if (!path)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
+	int rc;
+	char old;
 
 	tmp = ls_strdup(path);
 	if (!tmp)
 		return -1;
 
-	cur = tmp;
-	while ((cur = ls_strdir(cur)))
+	token = tmp;
+	while ((token = ls_strdir(token)))
 	{
-		*cur = 0;
+		old = *token == 0;
+
+		*token = 0;
 		rc = ls_stat(tmp, &st);
-		*cur = LS_PATH_SEP, cur++;
 
 		if (rc == -1)
 		{
 			rc = ls_createdir(tmp);
-			if (rc == -1) break;
-			continue;
+			if (rc == -1)
+			{
+				ls_free(tmp);
+				return -1;
+			}
 		}
-		
-		if (st.type != LS_FT_DIR)
+		else if (st.type != LS_FT_DIR)
 		{
-			rc = ls_set_errno(LS_ALREADY_EXISTS);
-			break;
+			ls_free(tmp);
+			return ls_set_errno(LS_ALREADY_EXISTS);
 		}
+
+		*token = old, token++;
 	}
 
 	ls_free(tmp);
-	return rc;
+	return 0;
 }
 
 ls_handle ls_pipe_create(const char *name, int flags)
