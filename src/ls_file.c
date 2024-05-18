@@ -981,21 +981,22 @@ int ls_createdir(const char *path)
 int ls_createdirs(const char *path)
 {
 	char *tmp;
-	char *token;
+	char *next;
 	struct ls_stat st;
 	int rc;
-	char old;
 
 	tmp = ls_strdup(path);
 	if (!tmp)
 		return -1;
 
-	token = tmp;
-	while ((token = ls_strdir(token)))
+	next = tmp;
+	while (next)
 	{
-		old = *token;
+		next = strchr(next, LS_PATH_SEP);
 
-		*token = 0;
+		if (next)
+			*next = 0;
+
 		rc = ls_stat(tmp, &st);
 
 		if (rc == -1)
@@ -1013,7 +1014,8 @@ int ls_createdirs(const char *path)
 			return ls_set_errno(LS_ALREADY_EXISTS);
 		}
 
-		*token = old, token++;
+		if (next)
+			*next = LS_PATH_SEP, next++;
 	}
 
 	ls_free(tmp);
