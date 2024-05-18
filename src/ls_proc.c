@@ -294,10 +294,9 @@ ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct
 #if LS_WINDOWS
 	char cmd[MAX_PATH];
 	size_t len;
-	size_t argv_len;
-	const char **new_argv;
-	size_t i;
+	const char *new_argv[3];
 	ls_handle ph;
+	LPWSTR lpCmd;
 
 	if (!path)
 	{
@@ -312,19 +311,25 @@ ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct
 		return NULL;
 	}
 
-	argv_len = argv ? salen(argv) : 0;
-	new_argv = ls_malloc((argv_len + 2) * sizeof(char *));
-	if (!new_argv)
+	lpCmd = ls_build_command_line(path, argv);
+	if (!lpCmd)
 		return NULL;
 
 	new_argv[0] = "/C";
-	for (i = 0; i < argv_len; i++)
-		new_argv[i + 1] = argv[i];
-	new_argv[argv_len + 1] = NULL;
+
+	new_argv[1] = ls_wchar_to_utf8(lpCmd);
+	if (!new_argv[1])
+	{
+		ls_free(lpCmd);
+		return NULL;
+	}
+
+	new_argv[2] = NULL;
 
 	ph = ls_proc_start(cmd, new_argv, info);
 
-	ls_free(new_argv);
+	ls_free(new_argv[1]);
+	ls_free(lpCmd);
 
 	return ph;
 #else
