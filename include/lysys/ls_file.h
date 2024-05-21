@@ -359,6 +359,18 @@ int ls_createdir(const char *path);
 //! error occurred.
 int ls_createdirs(const char *path);
 
+//! \brief Create an anonymous pipe
+//! 
+//! \param read A pointer to a handle that will receive the read end
+//! of the pipe
+//! \param write A pointer to a handle that will receive the write
+//! end of the pipe
+//! \param flags Flags for the pipe creation
+//! 
+//! \return 0 if the pipe was successfully created, -1 if an error
+//! occurred.
+int ls_pipe(ls_handle *read, ls_handle *write, int flags);
+
 //! \brief Create a named pipe.
 //! 
 //! Creates a named pipe with the specified name. The pipe is created
@@ -370,7 +382,7 @@ int ls_createdirs(const char *path);
 //! \param flags Pipe creation flags.
 //! 
 //! \return Handle to the pipe or NULL on failure.
-ls_handle ls_pipe_create(const char *name, int flags);
+ls_handle ls_mkfifo(const char *name, int flags);
 
 //! \brief Open a named pipe.
 //! 

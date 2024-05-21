@@ -328,7 +328,7 @@ ls_handle ls_proc_start_shell(const char *path, const char *argv[], const struct
 
 	ph = ls_proc_start(cmd, new_argv, info);
 
-	ls_free(new_argv[1]);
+	ls_free((char *)new_argv[1]);
 	ls_free(lpCmd);
 
 	return ph;

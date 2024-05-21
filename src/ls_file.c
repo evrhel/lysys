@@ -1022,35 +1022,113 @@ int ls_createdirs(const char *path)
 	return 0;
 }
 
-ls_handle ls_pipe_create(const char *name, int flags)
+#if LS_WINDOWS
+static volatile LONG _lPipeSerialNumber = 1;
+#endif // LS_WINDOWS
+
+int ls_pipe(ls_handle *read, ls_handle *write, int flags)
+{
+#if LS_WINDOWS
+	HANDLE hRead, hWrite;
+	DWORD dwErr;
+	WCHAR szName[MAX_PATH];
+	size_t len;
+	DWORD dwMode;
+
+	if (!read || !write)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	// TODO: insecure pipe name
+	len = ls_scbwprintf(
+		szName,
+		sizeof(szName),
+		L"\\\\.\\pipe\\lysys.%lu.%lu.%lu",
+		GetCurrentProcessId(),
+		GetCurrentThreadId(),
+		InterlockedIncrement(&_lPipeSerialNumber));
+	if (len == -1)
+		return -1;
+
+	dwMode = (flags & LS_FLAG_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
+
+	hRead = CreateNamedPipeW(
+		szName,
+		PIPE_ACCESS_INBOUND | dwMode,
+		PIPE_TYPE_BYTE | PIPE_WAIT,
+		1,
+		PIPE_BUF_SIZE,
+		PIPE_BUF_SIZE,
+		0,
+		NULL);
+
+	if (hRead == INVALID_HANDLE_VALUE)
+		return ls_set_errno_win32(GetLastError());
+
+	hWrite = CreateFileW(
+		szName,
+		GENERIC_WRITE,
+		0,
+		NULL,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL | dwMode,
+		NULL);
+
+	if (hWrite == INVALID_HANDLE_VALUE)
+	{
+		dwErr = GetLastError();
+		CloseHandle(hRead);
+		return ls_set_errno_win32(dwErr);
+	}
+
+	*read = ls_handle_create(&FileClass);
+	if (!*read)
+	{
+		CloseHandle(hRead);
+		CloseHandle(hWrite);
+		return -1;
+	}
+
+	*write = ls_handle_create(&FileClass);
+	if (!*write)
+	{
+		CloseHandle(hRead);
+		CloseHandle(hWrite);
+		ls_handle_dealloc(*read);
+		return -1;
+	}
+
+	*((PHANDLE)read) = hRead;
+	*((PHANDLE)write) = hWrite;
+
+	return 0;
+#else
+	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDOWS
+}
+
+ls_handle ls_mkfifo(const char *name, int flags)
 {
 #if LS_WINDOWS
 	PHANDLE ph;
 	HANDLE hPipe;
 	WCHAR szName[MAX_PATH];
-	WCHAR szPath[MAX_PATH];
-	size_t cb;
+	int rc;
+	DWORD dwMode;
 	DWORD dwErr;
-	DWORD dwOpenMode;
 
-	cb = ls_utf8_to_wchar_buf(name, szName, MAX_PATH);
-	if (cb == -1)
-		return NULL;
-
-	cb = ls_scbwprintf(szPath, sizeof(szPath), L"\\\\.\\pipe\\%s", szName);
-	if (cb == -1)
+	rc = ls_scbwprintf(szName, sizeof(szName), L"\\\\.\\pipe\\%s", name);
+	if (rc == -1)
 		return NULL;
 
 	ph = ls_handle_create(&FileClass);
 	if (!ph)
 		return NULL;
 
-	dwOpenMode = PIPE_ACCESS_DUPLEX;
-	if (flags & LS_FLAG_ASYNC)
-		dwOpenMode |= FILE_FLAG_OVERLAPPED;
+	dwMode = (flags & LS_FLAG_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
 
-	hPipe = CreateNamedPipeW(szPath, PIPE_ACCESS_DUPLEX, PIPE_MODE, 1,
-		PIPE_BUF_SIZE, PIPE_BUF_SIZE, 0, NULL);
+	hPipe = CreateNamedPipeW(szName,
+		PIPE_ACCESS_DUPLEX | dwMode,
+		PIPE_MODE, 1, PIPE_BUF_SIZE, PIPE_BUF_SIZE, 0, NULL);
 	if (hPipe == INVALID_HANDLE_VALUE)
 	{
 		dwErr = GetLastError();

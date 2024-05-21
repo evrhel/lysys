@@ -15,13 +15,12 @@
 #define LS_COND 5
 #define LS_THREAD (6 | LS_WAITABLE)
 #define LS_PROC (7 | LS_WAITABLE)
-#define LS_PIPE (8 | LS_WAITABLE | LS_READABLE | LS_WRITABLE)
-#define LS_EVENT (9 | LS_WAITABLE)
-#define LS_WATCH (10 | LS_WAITABLE)
-#define LS_TLS 11
-#define LS_PERF_MONITOR 12
-#define LS_AIO (13 | LS_WAITABLE)
-#define LS_SNAPSHOT 14
+#define LS_EVENT (8 | LS_WAITABLE)
+#define LS_WATCH (9 | LS_WAITABLE)
+#define LS_TLS 10
+#define LS_PERF_MONITOR 11
+#define LS_AIO (12 | LS_WAITABLE)
+#define LS_SNAPSHOT 13
 
 // handle is statically allocated, will never have memory deallocated
 // or destructor called
