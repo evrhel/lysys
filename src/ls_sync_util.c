@@ -8,7 +8,17 @@ int lock_init(ls_lock_t *lock)
     InitializeCriticalSection(lock);
     return 0;
 #else
-    return ls_set_errno(ls_errno_to_error(pthread_mutex_init(lock, NULL)));
+    pthread_mutexattr_t attr;
+    int rc;
+
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+
+    rc = pthread_mutex_init(lock, &attr);
+
+    pthread_mutexattr_destroy(&attr);
+
+    return ls_set_errno(ls_errno_to_error(rc));
 #endif // LS_WINDOWS
 }
 
@@ -30,7 +40,7 @@ void lock_lock(ls_lock_t *lock)
     int rc;
     
     rc = pthread_mutex_lock(lock);
-    if (rc == 0)
+    if (LS_LIKELY(rc == 0))
         return;
     
     errno = rc;
@@ -45,7 +55,7 @@ int lock_trylock(ls_lock_t *lock)
     return TryEnterCriticalSection(lock) ? 0 : 1;
 #else
     int rc = pthread_mutex_trylock(lock);
-    if (rc == 0)
+    if (LS_LIKELY(rc == 0))
         return 0;
     
     if (rc == EBUSY)
@@ -65,7 +75,7 @@ void lock_unlock(ls_lock_t *lock)
     int rc;
     
     rc = pthread_mutex_unlock(lock);
-    if (rc == 0)
+    if (LS_LIKELY(rc == 0))
         return;
     
     errno = rc;

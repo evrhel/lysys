@@ -14,6 +14,7 @@
 #include "ls_proc.h"
 #include "ls_shell.h"
 #include "ls_stat.h"
+#include "ls_string.h"
 #include "ls_sync.h"
 #include "ls_sysinfo.h"
 #include "ls_thread.h"

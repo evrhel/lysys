@@ -66,17 +66,36 @@
 	#define LS_ARCH "unknown"
 #endif // _WIN64
 
+#if defined(_MSC_VER)
+	#define LS_MSVC 1
+	#define LS_COMPILER "msvc"
+#elif defined(__clang__)
+	#define LS_CLANG 1
+	#define LS_COMPILER "clang"
+#elif defined(__GNUC__)
+	#define LS_GCC 1
+	#define LS_COMPILER "gcc"
+#else
+	#define LS_COMPILER "unknown"
+#endif // _MSC_VER
+
+#if LS_WINDOWS
+#define LS_THREADLOCAL __declspec(thread)
+#define LS_RESTRICT __restrict
+#define LS_LIKELY(x) (x)
+#define LS_UNLIKELY(x) (x)
+#define LS_UNREACHABLE __assume(0)
+#else
+#define LS_THREADLOCAL __thread
+#define LS_RESTRICT restrict
+#define LS_LIKELY(x) __builtin_expect(!!(x), 1)
+#define LS_UNLIKELY(x) __builtin_expect(!!(x), 0)
+#define LS_UNREACHABLE __builtin_unreachable()
+#endif // LS_WINDOWS
+
 typedef void *ls_handle;
 
 #include <stdint.h>
 #include <stddef.h>
 
-#if LS_WINDOWS
-#define LS_THREADLOCAL __declspec(thread)
-#define LS_RESTRICT __restrict
-#else
-#define LS_THREADLOCAL __thread
-#define LS_RESTRICT restrict
-#endif // LS_WINDOWS
-
-#endif
+#endif // _LS_DEFS_H_
