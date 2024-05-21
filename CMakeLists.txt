@@ -17,6 +17,7 @@ set(LYSYS_SOURCES
     ${src}/ls_mmap.c
     ${src}/ls_native.c
     ${src}/ls_proc.c
+    ${src}/ls_random.c
     ${src}/ls_shell.c
     ${src}/ls_stat.c
     ${src}/ls_string.c

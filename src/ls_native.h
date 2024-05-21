@@ -19,6 +19,7 @@
 #include <lmcons.h>
 #include <UserEnv.h>
 #include <tchar.h>
+#include <bcrypt.h>
 
 typedef HANDLE native_file_t;
 typedef DWORD native_flags_t;
