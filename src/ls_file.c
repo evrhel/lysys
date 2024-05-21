@@ -1112,12 +1112,12 @@ ls_handle ls_mkfifo(const char *name, int flags)
 	PHANDLE ph;
 	HANDLE hPipe;
 	WCHAR szName[MAX_PATH];
-	int rc;
+	size_t len;
 	DWORD dwMode;
 	DWORD dwErr;
 
-	rc = ls_scbwprintf(szName, sizeof(szName), L"\\\\.\\pipe\\%s", name);
-	if (rc == -1)
+	len = ls_scbwprintf(szName, sizeof(szName), L"\\\\.\\pipe\\%s", name);
+	if (len == -1)
 		return NULL;
 
 	ph = ls_handle_create(&FileClass);

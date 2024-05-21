@@ -1,22 +1,49 @@
 #include <lysys/ls_random.h>
 
+#include <math.h>
+
 #include "ls_native.h"
 
 int ls_rand_bytes(void *buf, size_t len)
 {
 #if LS_WINDOWS
 	NTSTATUS nt;
+	ULONG cb;
+
+	_ls_errno = 0;
 
 	if (!len)
 		return 0;
 
+	// BCryptGenRandom has a limit of 2^32 bytes
+#if SIZE_MAX > UINT32_MAX
+	cb = (ULONG)(len & UINT32_MAX);
+#else
+	cb = (ULONG)len;
+#endif // SIZE_MAX > UINT32_MAX
+
 	nt = BCryptGenRandom(
 		NULL,
 		buf,
-		len,
+		cb,
 		BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-	if (nt != 0)
+	if (!BCRYPT_SUCCESS(nt))
 		return ls_set_errno(LS_NOT_SUPPORTED);
+
+#if SIZE_MAX > UINT32_MAX
+	// handle the remaining bytes
+	len >>= 32;
+	if (len)
+	{
+		nt = BCryptGenRandom(
+			NULL,
+			(uint8_t *)buf + cb,
+			(ULONG)len,
+			BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+		if (!BCRYPT_SUCCESS(nt))
+			return ls_set_errno(LS_NOT_SUPPORTED);
+	}
+#endif // SIZE_MAX > UINT32_MAX
 
 	return 0;
 #elif LS_DARWIN
@@ -85,31 +112,34 @@ int ls_rand_int(int min, int max)
 	return (value % range) + min;
 }
 
+// Mantissa bits for a double, including the implicit bit
+#define DOUBLE_BITS 53
+
 double ls_rand_double(void)
 {
 	int rc;
-	uint64_t value;
+	uint64_t bits;
 
-	_ls_errno = 0;
-
-	rc = ls_rand_bytes(&value, sizeof(value));
-	if (rc != 0)
+	rc = ls_rand_bytes(&bits, sizeof(bits));
+	if (rc == -1)
 		return -1;
 
-
-	return (double)value / (double)UINT64_MAX;
+	bits = bits & ((1ULL << DOUBLE_BITS) - 1);
+	return ldexp((double)bits, -DOUBLE_BITS);
 }
+
+// Mantissa bits for a float, including the implicit bit
+#define FLOAT_BITS 24
 
 float ls_rand_float(void)
 {
 	int rc;
-	uint32_t value;
+	uint32_t bits;
 
-	_ls_errno = 0;
-
-	rc = ls_rand_bytes(&value, sizeof(value));
-	if (rc != 0)
+	rc = ls_rand_bytes(&bits, sizeof(bits));
+	if (rc == -1)
 		return -1;
 
-	return (float)value / (float)UINT32_MAX;
+	bits = bits & ((1U << FLOAT_BITS) - 1);
+	return ldexpf((float)bits, -FLOAT_BITS);
 }
