@@ -541,6 +541,9 @@ ls_handle ls_create_perf_monitor(void)
 	if (!m)
 		return NULL;
 	
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 	// deprecated on macOS 12.0
 	// need for compatability with macOS 10.13
 	kr = IOMasterPort(0, &m->master);
@@ -550,6 +553,8 @@ ls_handle ls_create_perf_monitor(void)
 		ls_set_errno_kr(kr);
 		return NULL;
 	}
+
+#pragma clang diagnostic pop
 	
 	return m;
 #else

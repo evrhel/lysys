@@ -1,6 +1,7 @@
 #include <lysys/ls_random.h>
 
 #include <math.h>
+#include <Security/Security.h>
 
 #include "ls_native.h"
 
@@ -49,7 +50,7 @@ int ls_rand_bytes(void *buf, size_t len)
 #elif LS_DARWIN
 	int status;
 
-	status = SecRandomBytesCopy(kSecRandomDefault, len, buf);
+	status = SecRandomCopyBytes(kSecRandomDefault, len, buf);
 	if (status != errSecSuccess)
 		return ls_set_errno(LS_NOT_SUPPORTED);
 
