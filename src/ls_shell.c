@@ -582,8 +582,33 @@ size_t ls_realpath(const char *path, char *buf, size_t size)
 	memcpy(buf, szResult, rc);
 	return rc;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return -1;
+	char *rpath;
+	size_t len;
+
+	if (!path || !buf != !size)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	rpath = realpath(path, NULL);
+	if (!rpath)
+		return ls_set_errno(ls_errno_to_error(errno));
+
+	len = strlen(rpath) + 1;
+	if (size == 0)
+	{
+		free(rpath);
+		return len;
+	}
+
+	if (len > size)
+	{
+		free(rpath);
+		return ls_set_errno(LS_BUFFER_TOO_SMALL);
+	}
+
+	memcpy(buf, rpath, len);
+	free(rpath);
+
+	return len - 1;
 #endif // LS_WINDOWS
 }
 
@@ -615,27 +640,32 @@ size_t ls_cwd(char *buf, size_t size)
 	memcpy(buf, szResult, rc);
 	return rc;
 #else
+	char *cwd;
 	size_t len;
-	char tbuf[PATH_MAX];
-	char *r;
 
-	if (size == 0 && buf != NULL)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-	if (buf == NULL && size != 0)
+	if (!buf != !size)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	r = getcwd(tbuf, PATH_MAX);
-	if (r == NULL)
+	cwd = getcwd(NULL, 0);
+	if (!cwd)
 		return ls_set_errno(ls_errno_to_error(errno));
 
-	len = strlen(tbuf) + 1;
-	if (buf == NULL && size == 0)
+	len = strlen(cwd) + 1;
+	if (size == 0)
+	{
+		free(cwd);
 		return len;
+	}
 
-	if (size < len)
+	if (len > size)
+	{
+		free(cwd);
 		return ls_set_errno(LS_BUFFER_TOO_SMALL);
+	}
 
-	memcpy(buf, r, len);
+	memcpy(buf, cwd, len);
+	free(cwd);
+
 	return len - 1;
 #endif // LS_WINDOWS
 }
