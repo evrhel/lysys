@@ -653,12 +653,12 @@ int ls_access_to_oflags(int access)
 	if (access & LS_FILE_READ)
 	{
 		if (access & LS_FILE_WRITE)
-			oflags |= O_RDWR;
+			oflags = O_RDWR;
 		else
-			oflags |= O_RDONLY;
+			oflags = O_RDONLY;
 	}
 	else if (access & LS_FILE_WRITE)
-		oflags |= O_WRONLY;
+		oflags = O_WRONLY;
 
 	return oflags;
 }

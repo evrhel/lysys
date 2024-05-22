@@ -19,7 +19,13 @@
 #if LS_WINDOWS
 #define PIPE_BUF_SIZE 4096
 #define PIPE_MODE (PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT)
+#define PIPE_PREFIX L"\\\\.\\pipe\\"
+#else
+#define PIPE_PREFIX "/tmp/"
 #endif // LS_WINDOWS
+
+// -1 for null terminator
+#define MAX_PIPE_PATH (sizeof(PIPE_PREFIX) + LS_MAX_PIPE_NAME - 1)
 
 static void ls_file_dtor(void *param)
 {
@@ -30,6 +36,7 @@ static void ls_file_dtor(void *param)
 #endif // LS_WINDOWS
 }
 
+// Windows: PHANDLE, Linux: int *
 static const struct ls_class FileClass = {
 	.type = LS_FILE,
 #if LS_WINDOWS
@@ -1043,7 +1050,7 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 	len = ls_scbwprintf(
 		szName,
 		sizeof(szName),
-		L"\\\\.\\pipe\\lysys.%lu.%lu.%llu",
+		PIPE_PREFIX L"lysys.%lu.%lu.%llu",
 		GetCurrentProcessId(),
 		GetCurrentThreadId(),
 		serial);
@@ -1062,7 +1069,7 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 	}
 
 	dwOpenMode = (flags & LS_FLAG_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
-	dwMode = PIPE_NOWAIT;
+	dwMode = PIPE_WAIT;
 
 	hRead = CreateNamedPipeW(
 		szName,
@@ -1108,7 +1115,41 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 
 	return 0;
 #else
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+	int rc;
+	int fds[2];
+	int *pread, *pwrite;
+
+	if (!read || !write)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	pread = ls_handle_create(&FileClass);
+	if (!pread)
+		return -1;
+
+	pwrite = ls_handle_create(&FileClass);
+	if (!pwrite)
+	{
+		rc = _ls_errno;
+		ls_handle_dealloc(pread);
+		return ls_set_errno(rc);
+	}
+
+	rc = pipe(fds);
+	if (rc == -1)
+	{
+		rc = ls_errno_to_error(errno);
+		ls_handle_dealloc(pwrite);
+		ls_handle_dealloc(pread);
+		return ls_set_errno(rc);
+	}
+
+	*pread = fds[0];
+	*pwrite = fds[1];
+
+	*read = pread;
+	*write = pwrite;
+
+	return 0;
 #endif // LS_WINDOWS
 }
 
@@ -1122,7 +1163,7 @@ ls_handle ls_mkfifo(const char *name, int flags)
 	DWORD dwMode;
 	DWORD dwErr;
 
-	len = ls_scbwprintf(szName, sizeof(szName), L"\\\\.\\pipe\\%s", name);
+	len = ls_scbwprintf(szName, sizeof(szName), PIPE_PREFIX L"%s", name);
 	if (len == -1)
 		return NULL;
 
@@ -1147,8 +1188,37 @@ ls_handle ls_mkfifo(const char *name, int flags)
 
 	return ph;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+	int rc;
+	int fd;
+	int *pfd;
+	char path[MAX_PIPE_PATH];
+	size_t cb;
+
+	if (!name)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	cb = ls_scbprintf(path, sizeof(path), PIPE_PREFIX "%s", name);
+	if (cb == -1)
+		return NULL;
+
+	pfd = ls_handle_create(&FileClass);
+	if (!pfd)
+		return NULL;
+
+	fd = mkfifo(path, 0666);
+	if (fd == -1)
+	{
+		rc = ls_errno_to_error(errno);
+		ls_handle_dealloc(pfd);
+		ls_set_errno(rc);
+		return NULL;
+	}
+
+	*pfd = fd;
+	return pfd;
 #endif // LS_WINDOWS
 }
 
@@ -1164,14 +1234,43 @@ ls_handle ls_pipe_open(const char *name, int access)
 		return NULL;
 	}
 
-	cb = ls_scbprintf(szPath, sizeof(szPath), "\\\\.\\pipe\\%s", name);
+	cb = ls_scbprintf(szPath, sizeof(szPath), PIPE_PREFIX "%s", name);
 	if (cb == -1)
 		return NULL;
 
 	return ls_open(szPath, LS_FILE_READ | LS_FILE_WRITE | access,
 		LS_SHARE_READ | LS_SHARE_WRITE, LS_OPEN_EXISTING);
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+	char path[MAX_PIPE_PATH];
+	size_t cb;
+	int *pfd;
+	int fd;
+	int rc;
+
+	if (!name)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	cb = ls_scbprintf(path, sizeof(path), PIPE_PREFIX "%s", name);
+	if (cb == -1)
+		return NULL;
+
+	pfd = ls_handle_create(&FileClass);
+	if (!pfd)
+		return NULL;
+	
+	fd = open(path, O_RDWR, 0666);
+	if (fd == -1)
+	{
+		rc = ls_errno_to_error(errno);
+		ls_handle_dealloc(pfd);
+		ls_set_errno(rc);
+		return NULL;
+	}
+
+	*pfd = fd;
+	return pfd;
 #endif // LS_WINDOWS
 }
