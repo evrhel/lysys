@@ -5,6 +5,7 @@
 #include <lysys/ls_shell.h>
 #include <lysys/ls_stat.h>
 #include <lysys/ls_string.h>
+#include <lysys/ls_random.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -140,7 +141,7 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	DWORD dwRead, dwToRead;
 	size_t remaining;
 	HANDLE hFile;
-	
+
 	hFile = ls_resolve_file(fh);
 	if (!hFile)
 		return -1;
@@ -201,7 +202,7 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	DWORD dwWritten, dwToWrite;
 	size_t remaining;
 	HANDLE hFile;
-	
+
 	hFile = ls_resolve_file(fh);
 	if (!hFile)
 		return -1;
@@ -325,7 +326,7 @@ static void ls_aio_update_status(struct ls_aio *aio, int status)
 			aio->status = LS_AIO_ERROR;
 		}
 	}
-	
+
 	cond_broadcast(&aio->cond);
 }
 
@@ -352,7 +353,7 @@ static int ls_aio_check_error(struct ls_aio *aio)
 		aio->error = rc;
 		ls_aio_update_status(aio, LS_AIO_ERROR);
 
-		 // aio->error may have been changed by ls_aio_update_status
+		// aio->error may have been changed by ls_aio_update_status
 		return ls_set_errno(ls_errno_to_error(aio->error));
 	}
 	else if (rc == EINPROGRESS)
@@ -365,7 +366,7 @@ static int ls_aio_check_error(struct ls_aio *aio)
 		ls_aio_update_status(aio, LS_AIO_CANCELED);
 		return ls_set_errno(LS_CANCELED);
 	}
-	
+
 	// see aio_error(3)
 	__builtin_unreachable();
 }
@@ -377,7 +378,7 @@ static void ls_aio_handler(union sigval sigval)
 	lock_lock(&aio->lock);
 
 	(void)ls_aio_check_error(aio);
-	
+
 	lock_unlock(&aio->lock);
 }
 
@@ -410,7 +411,7 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 	struct timespec ts;
 
 	lock_lock(&aio->lock);
-	
+
 	while (aio->status == LS_AIO_PENDING)
 	{
 		rc = cond_wait(&aio->cond, &aio->lock, ms);
@@ -443,7 +444,7 @@ ls_handle ls_aio_open(ls_handle fh)
 	hFile = ls_resolve_file(fh);
 	if (!hFile)
 		return NULL;
-	
+
 	aio = ls_handle_create(&AioClass);
 	if (!aio)
 		return NULL;
@@ -489,7 +490,7 @@ ls_handle ls_aio_open(ls_handle fh)
 	}
 
 	aio->aiocb.aio_fildes = fd;
-	
+
 	// notifaction handler
 	sev = &aio->aiocb.aio_sigevent;
 	sev->sigev_notify = SIGEV_THREAD;
@@ -568,7 +569,7 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	}
 
 	aio->status = LS_AIO_PENDING;
-	
+
 	lock_unlock(&aio->lock);
 
 	return 0;
@@ -639,7 +640,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	}
 
 	aio->status = LS_AIO_PENDING;
-	
+
 	lock_unlock(&aio->lock);
 
 	return 0;
@@ -792,7 +793,7 @@ int ls_move(const char *old_path, const char *new_path)
 	return 0;
 #else
 	int rc;
-	
+
 	rc = rename(old_path, new_path);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
@@ -822,15 +823,15 @@ int ls_copy(const char *old_path, const char *new_path)
 
 	if (!old_path || !new_path)
 		return -1;
-	
+
 	s = copyfile_state_alloc();
 	if (!s)
 		return -1;
-	
+
 	rc = copyfile(old_path, new_path, s, COPYFILE_STAT | COPYFILE_DATA);
-	
+
 	copyfile_state_free(s);
-	
+
 	return rc == 0 ? 0 : -1;
 #else
 	int src_fd, dst_fd;
@@ -880,7 +881,7 @@ int ls_delete(const char *path)
 
 	if (!path)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
-	
+
 	rc = unlink(path);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
@@ -1022,39 +1023,51 @@ int ls_createdirs(const char *path)
 	return 0;
 }
 
-#if LS_WINDOWS
-static volatile LONG _lPipeSerialNumber = 1;
-#endif // LS_WINDOWS
-
 int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 {
 #if LS_WINDOWS
+	PHANDLE phRead, phWrite;
 	HANDLE hRead, hWrite;
 	DWORD dwErr;
 	WCHAR szName[MAX_PATH];
 	size_t len;
+	DWORD dwOpenMode;
 	DWORD dwMode;
+	uint64_t serial;
 
 	if (!read || !write)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	// TODO: insecure pipe name
+	serial = ls_rand_uint64();
+
 	len = ls_scbwprintf(
 		szName,
 		sizeof(szName),
-		L"\\\\.\\pipe\\lysys.%lu.%lu.%lu",
+		L"\\\\.\\pipe\\lysys.%lu.%lu.%llu",
 		GetCurrentProcessId(),
 		GetCurrentThreadId(),
-		InterlockedIncrement(&_lPipeSerialNumber));
+		serial);
 	if (len == -1)
 		return -1;
 
-	dwMode = (flags & LS_FLAG_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
+	phRead = ls_handle_create(&FileClass);
+	if (!phRead)
+		return -1;
+
+	phWrite = ls_handle_create(&FileClass);
+	if (!phWrite)
+	{
+		ls_handle_dealloc(phRead);
+		return -1;
+	}
+
+	dwOpenMode = (flags & LS_FLAG_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
+	dwMode = PIPE_NOWAIT;
 
 	hRead = CreateNamedPipeW(
 		szName,
-		PIPE_ACCESS_INBOUND | dwMode,
-		PIPE_TYPE_BYTE | PIPE_WAIT,
+		PIPE_ACCESS_INBOUND | dwOpenMode,
+		PIPE_TYPE_BYTE | dwMode,
 		1,
 		PIPE_BUF_SIZE,
 		PIPE_BUF_SIZE,
@@ -1062,7 +1075,12 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 		NULL);
 
 	if (hRead == INVALID_HANDLE_VALUE)
-		return ls_set_errno_win32(GetLastError());
+	{
+		dwErr = GetLastError();
+		ls_handle_dealloc(phWrite);
+		ls_handle_dealloc(phRead);
+		return ls_set_errno_win32(dwErr);
+	}
 
 	hWrite = CreateFileW(
 		szName,
@@ -1070,35 +1088,23 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 		0,
 		NULL,
 		OPEN_EXISTING,
-		FILE_ATTRIBUTE_NORMAL | dwMode,
+		FILE_ATTRIBUTE_NORMAL | dwOpenMode,
 		NULL);
 
 	if (hWrite == INVALID_HANDLE_VALUE)
 	{
 		dwErr = GetLastError();
 		CloseHandle(hRead);
+		ls_handle_dealloc(phWrite);
+		ls_handle_dealloc(phRead);
 		return ls_set_errno_win32(dwErr);
 	}
 
-	*read = ls_handle_create(&FileClass);
-	if (!*read)
-	{
-		CloseHandle(hRead);
-		CloseHandle(hWrite);
-		return -1;
-	}
+	*phRead = hRead;
+	*phWrite = hWrite;
 
-	*write = ls_handle_create(&FileClass);
-	if (!*write)
-	{
-		CloseHandle(hRead);
-		CloseHandle(hWrite);
-		ls_handle_dealloc(*read);
-		return -1;
-	}
-
-	*((PHANDLE)read) = hRead;
-	*((PHANDLE)write) = hWrite;
+	*read = phRead;
+	*write = phWrite;
 
 	return 0;
 #else

@@ -3,6 +3,7 @@
 #include <lysys/ls_core.h>
 #include <lysys/ls_string.h>
 #include <lysys/ls_shell.h>
+#include <lysys/ls_file.h>
 
 #include "ls_native.h"
 #include "ls_handle.h"
@@ -27,7 +28,7 @@ struct ls_proc
 #else
 	pid_t pid;
 	int status;
-	
+
 	char *path;
 	char *name;
 	size_t path_len;
@@ -59,7 +60,7 @@ static void ls_proc_dtor(struct ls_proc *proc)
 {
 #if LS_WINDOWS
 	if (proc->pi.hProcess)
-		CloseHandle(proc->pi.hProcess);	
+		CloseHandle(proc->pi.hProcess);
 
 	if (proc->pi.hThread)
 		CloseHandle(proc->pi.hThread);
@@ -68,10 +69,10 @@ static void ls_proc_dtor(struct ls_proc *proc)
 	pthread_t pt;
 	intptr_t ipid;
 	pid_t pid;
-	
+
 	if (proc->path)
 		ls_free(proc->path);
-	
+
 	pid = waitpid(proc->pid, NULL, WNOHANG);
 	if (pid == 0)
 	{
@@ -104,10 +105,10 @@ static int ls_proc_wait(struct ls_proc *proc, unsigned long ms)
 	int status;
 	useconds_t useconds;
 	struct sigaction sa;
-	
+
 	if (proc->status)
 		return 0;
-	
+
 	if (ms == LS_INFINITE)
 	{
 		rc = waitpid(proc->pid, &status, 0);
@@ -122,12 +123,12 @@ static int ls_proc_wait(struct ls_proc *proc, unsigned long ms)
 		rc = sigaction(SIGALRM, &sa, NULL);
 		if (rc == -1)
 			return ls_set_errno(ls_errno_to_error(errno));
-		
+
 		useconds = (useconds_t)(ms * 1000);
 		rc = ualarm(useconds, 0);
 		if (rc == -1)
 			return ls_set_errno(ls_errno_to_error(errno));
-		
+
 		rc = waitpid(proc->pid, &status, 0);
 		if (rc == -1)
 		{
@@ -139,12 +140,12 @@ static int ls_proc_wait(struct ls_proc *proc, unsigned long ms)
 			(void)ualarm(0, 0); // disable interrupt
 			return -1;
 		}
-		
+
 		(void)ualarm(0, 0); // disable interrupt
 	}
-	
+
 	proc->status = status;
-	
+
 	return 0;
 #endif // LS_WINDOWS
 }
@@ -203,7 +204,7 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 	LPWSTR lpEnv = NULL;
 	LPWSTR lpDir = NULL;
 	DWORD dwErr;
-	DWORD dwFlags = 0; 
+	DWORD dwFlags = 0;
 	int err;
 
 	lpCmd = ls_build_command_line(path, argv);
@@ -237,19 +238,28 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 	{
 		if (info->hstdin || info->hstdout || info->hstderr)
 		{
-			dwFlags |= STARTF_USESTDHANDLES;
+			if (info->hstdin && info->hstdin != LS_STDIN)
+			{
+				ph->si.hStdInput = ls_resolve_file(info->hstdin);
+				if (!SetHandleInformation(ph->si.hStdInput, HANDLE_FLAG_INHERIT, 1))
+					goto generic_error;
+			}
 
-			ph->si.hStdInput = ls_resolve_file(info->hstdin);
-			if (!ph->si.hStdInput)
-				goto generic_error;
+			if (info->hstdout && info->hstdout != LS_STDOUT)
+			{
+				ph->si.hStdOutput = ls_resolve_file(info->hstdout);
+				if (!SetHandleInformation(ph->si.hStdOutput, HANDLE_FLAG_INHERIT, 1))
+					goto generic_error;
+			}
 
-			ph->si.hStdOutput = ls_resolve_file(info->hstdout);
-			if (!ph->si.hStdOutput)
-				goto generic_error;
+			if (info->hstderr && info->hstderr != LS_STDERR)
+			{
+				ph->si.hStdError = ls_resolve_file(info->hstderr);
+				if (!SetHandleInformation(ph->si.hStdError, HANDLE_FLAG_INHERIT, 1))
+					goto generic_error;
+			}
 
-			ph->si.hStdError = ls_resolve_file(info->hstderr);
-			if (!ph->si.hStdError)
-				goto generic_error;
+			ph->si.dwFlags |= STARTF_USESTDHANDLES;
 		}
 	}
 
@@ -435,13 +445,13 @@ ls_handle ls_proc_open(unsigned long pid)
 
 	if (getpid() == pid)
 		return LS_SELF;
-	
+
 	proc = ls_handle_create(&ProcClass);
 	if (!proc)
 		return NULL;
-	
+
 	(void)snprintf(filename, sizeof(filename), "/proc/%lu/exe", pid);
-	
+
 	rc = stat(filename, &st);
 	if (rc == -1)
 	{
@@ -449,7 +459,7 @@ ls_handle ls_proc_open(unsigned long pid)
 		ls_handle_dealloc(proc);
 		return NULL;
 	}
-	
+
 	proc->path_len = st.st_size;
 	proc->path = ls_malloc(proc->path_len + 1);
 	if (!proc->path)
@@ -457,7 +467,7 @@ ls_handle ls_proc_open(unsigned long pid)
 		ls_handle_dealloc(proc);
 		return NULL;
 	}
-	
+
 	fd = open(filename, O_RDONLY);
 	if (fd == -1)
 	{
@@ -466,7 +476,7 @@ ls_handle ls_proc_open(unsigned long pid)
 		ls_handle_dealloc(proc);
 		return NULL;
 	}
-	
+
 	n = read(fd, proc->path, proc->path_len);
 	if (n == -1)
 	{
@@ -475,19 +485,19 @@ ls_handle ls_proc_open(unsigned long pid)
 		ls_handle_dealloc(proc);
 		return NULL;
 	}
-	
+
 	proc->path[n] = 0;
-	
+
 	(void)close(fd);
-	
+
 	proc->name = strrchr(proc->path, '/');
 	if (!proc->name)
 		proc->name = proc->path;
 	else
 		proc->name++;
-	
+
 	proc->pid = (pid_t)pid;
-	
+
 	return proc;
 #endif // LS_WINDOWS
 }
@@ -589,10 +599,10 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 
 	if (ph == LS_SELF)
 		return 1;
-	
+
 	if (proc->status == 0)
 		return 1;
-	
+
 	if (exit_code)
 		*exit_code = WEXITSTATUS(proc->status);
 
@@ -622,7 +632,7 @@ size_t ls_proc_path(ls_handle ph, char *path, size_t size)
 
 	if (ph == LS_SELF)
 		return ls_get_self_path(path, size);
-	
+
 	if (size == 0)
 		return proc->path_len;
 
