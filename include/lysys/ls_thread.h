@@ -68,4 +68,22 @@ int ls_tls_set(ls_handle tlsh, void *value);
 //! occurred. Note that NULL is also a valid value.
 void *ls_tls_get(ls_handle tlsh);
 
+typedef void(*ls_apc_routine)(void *arg);
+
+//! \brief Queue an APC to a thread
+//! 
+//! \param routine The APC routine to be executed
+//! \param thread_id The thread ID of the target thread. Use 0 to
+//! target the current thread.
+//! \param arg The argument to be passed to the APC routine
+//! 
+//! \return 0 on success, -1 on failure
+int ls_queue_apc(ls_apc_routine routine, unsigned long thread_id, void *arg);
+
+//! \brief Set the current thread to alertable state
+//! 
+//! When a thread is in an alertable state, it is allowed to execute
+//! user-mode APCs or I/O completion routines.
+void ls_set_alertable(void);
+
 #endif // _LS_THREAD_H_

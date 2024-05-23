@@ -1,6 +1,7 @@
 #ifndef _LYSYS_H_
 #define _LYSYS_H_
 
+#include "ls_apc.h"
 #include "ls_clipboard.h"
 #include "ls_core.h"
 #include "ls_defs.h"
