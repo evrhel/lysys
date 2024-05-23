@@ -15,6 +15,7 @@
 #include "ls_native.h"
 #include "ls_util.h"
 #include "ls_sync_util.h"
+#include "ls_file_priv.h"
 
 #if LS_POSIX
 int type_from_mode(int mode)
@@ -51,7 +52,7 @@ int ls_stat(const char *path, struct ls_stat *st)
 	if (ls_utf8_to_wchar_buf(path, szPath, MAX_PATH) == -1)
 		return -1;
 
-	bRet = GetFileAttributesExW(szPath, GetFileExInfoStandard, &fad);	
+	bRet = GetFileAttributesExW(szPath, GetFileExInfoStandard, &fad);
 	if (!bRet)
 		return ls_set_errno_win32(GetLastError());
 
@@ -86,14 +87,14 @@ int ls_stat(const char *path, struct ls_stat *st)
 
 	if (!path || !st)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
-	
+
 	rc = stat(path, &pst);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
-	
+
 	st->size = pst.st_size;
 	st->type = type_from_mode(pst.st_mode);
-	
+
 	return 0;
 #endif // LS_WINDOWS
 }
@@ -104,16 +105,16 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	BOOL bRet;
 	BY_HANDLE_FILE_INFORMATION fi;
 	ULARGE_INTEGER uli;
-	HANDLE hFile;
+	struct ls_file *pf;
 
-	hFile = ls_resolve_file(file);
+	pf = ls_resolve_file(file);
+	if (!pf)
+		return -1;
 
-	if (!hFile)
-		return ls_set_errno(LS_INVALID_HANDLE);
 	if (!st)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	bRet = GetFileInformationByHandle(*(PHANDLE)file, &fi);
+	bRet = GetFileInformationByHandle(pf->hFile, &fi);
 	if (!bRet)
 		return ls_set_errno_win32(GetLastError());
 
@@ -150,14 +151,14 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	fd = ls_resolve_file(file);
 	if (fd == -1)
 		return -1;
-	
+
 	rc = fstat(fd, &pst);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
-	
+
 	st->size = pst.st_size;
 	st->type = type_from_mode(pst.st_mode);
-	
+
 	return 0;
 #endif // LS_WINDOWS
 }
@@ -188,7 +189,7 @@ int ls_access(const char *path, int mode)
 #else
 	int pmode;
 	int rc;
-	
+
 	switch (mode) {
 	case LS_FILE_READ:
 		pmode = R_OK;
@@ -205,7 +206,7 @@ int ls_access(const char *path, int mode)
 	default:
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 	}
-	
+
 	rc = access(path, pmode);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
@@ -273,7 +274,7 @@ ls_handle ls_opendir(const char *path)
 		ls_handle_dealloc(data);
 		return NULL;
 	}
-	
+
 	if (ls_wchar_to_utf8_buf(data->fd.cFileName, data->name, MAX_PATH) == -1)
 	{
 		FindClose(data->hFind);
@@ -302,11 +303,11 @@ ls_handle ls_opendir(const char *path)
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
-	
+
 	data = ls_handle_create(&DirClass);
 	if (!data)
 		return NULL;
-	
+
 	data->unidir = opendir(path);
 	if (!data->unidir)
 	{
@@ -314,7 +315,7 @@ ls_handle ls_opendir(const char *path)
 		ls_close(data);
 		return NULL;
 	}
-	
+
 	return data;
 #endif // LS_WINDOWS
 }
@@ -381,18 +382,18 @@ struct ls_dir *ls_readdir(ls_handle dir)
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
 	}
-	
+
 	dirent = readdir(data->unidir);
 	if (!dirent)
 	{
 		ls_set_errno(LS_NO_MORE_FILES);
 		return NULL;
 	}
-	
+
 	memcpy(&data->dirent, dirent, sizeof(struct dirent));
-	
+
 	data->dir.name = data->dirent.d_name;
-	
+
 	switch (data->dirent.d_type)
 	{
 	case DT_REG:
@@ -411,13 +412,13 @@ struct ls_dir *ls_readdir(ls_handle dir)
 		data->dir.type = LS_FT_UNKNOWN;
 		break;
 	}
-	
+
 	data->dir.size = 0;
-	
+
 	rc = stat(data->dir.name, &st);
 	if (rc == 0)
 		data->dir.size = st.st_size;
-	
+
 	return &data->dir;
 #endif // LS_WINDOWS
 }
@@ -437,7 +438,7 @@ struct ls_snapshot
 static void ls_snapshot_dtor(struct ls_snapshot *ss)
 {
 	size_t i;
-	
+
 	for (i = 0; i < ss->subtree_count; i++)
 		ls_close(ss->subtree[i]);
 
@@ -457,17 +458,17 @@ ls_handle ls_snapshot_dir(const char *path, int flags, uint32_t max_depth)
 	int rc;
 	int err;
 	size_t len;
-	
+
 	if (!path)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
-	
+
 	ss = ls_handle_create(&SnapshotClass);
 	if (!ss)
 		return NULL;
-	
+
 	rc = ls_stat(path, &ss->st);
 	if (rc == -1)
 		goto failure;
@@ -475,7 +476,7 @@ ls_handle ls_snapshot_dir(const char *path, int flags, uint32_t max_depth)
 	ss->path_len = ls_abspath(path, NULL, 0);
 	if (ss->path_len == -1)
 		goto failure;
-	
+
 	ss->path = ls_malloc(ss->path_len);
 	if (!ss->path)
 		goto failure;
@@ -491,11 +492,11 @@ ls_handle ls_snapshot_dir(const char *path, int flags, uint32_t max_depth)
 	ss->name_len = strlen(ss->name) + 1;
 
 	// snapshot is valid here
-	
+
 	rc = ls_snapshot_refresh(ss, max_depth, NULL, NULL);
 	if (rc == -1)
 		goto failure;
-	
+
 	return ss;
 
 failure:
@@ -530,7 +531,7 @@ size_t ls_snapshot_path(ls_handle ssh, char *path, size_t size)
 size_t ls_snapshot_name(ls_handle ssh, char *name, size_t size)
 {
 	struct ls_snapshot *ss;
-	
+
 	if (!ssh)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
@@ -553,10 +554,10 @@ size_t ls_snapshot_name(ls_handle ssh, char *name, size_t size)
 int ls_snapshot_stat(ls_handle ssh, struct ls_stat *st)
 {
 	struct ls_snapshot *ss;
-	
+
 	if (!ssh || !st)
 		return ls_set_errno(LS_INVALID_HANDLE);
-	
+
 	ss = ssh;
 	memcpy(st, &ss->st, sizeof(struct ls_stat));
 	return 0;
@@ -566,36 +567,36 @@ ls_handle ls_snapshot_enumerate(ls_handle ssh, void **it)
 {
 	struct ls_snapshot *ss;
 	uintptr_t i;
-	
+
 	if (!ssh)
 	{
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
 	}
-	
+
 	if (!it)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
-	
+
 	ss = ssh;
 	i = (uintptr_t)*it;
-	
+
 	if (ss->st.type != LS_FT_DIR)
 	{
 		ls_set_errno(LS_INVALID_STATE);
 		return NULL;
 	}
-	
+
 	if (i >= ss->subtree_count)
 	{
 		ls_set_errno(LS_NO_MORE_FILES);
 		return NULL;
 	}
-	
-	*it = (void *)(i+1);
-	
+
+	*it = (void *)(i + 1);
+
 	return ss->subtree[i];
 }
 
@@ -612,7 +613,7 @@ ls_handle ls_snapshot_lookup(ls_handle ssh, const char *path)
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
 	}
-	
+
 	if (!path)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
@@ -623,7 +624,7 @@ ls_handle ls_snapshot_lookup(ls_handle ssh, const char *path)
 
 	if (!*path)
 		return ss;
-	
+
 	if (ss->st.type != LS_FT_DIR)
 	{
 		ls_set_errno(LS_NOT_FOUND);
@@ -637,7 +638,7 @@ ls_handle ls_snapshot_lookup(ls_handle ssh, const char *path)
 	{
 		sub = ss->subtree[i];
 		if (!strncmp(sub->name, path, len) && sub->name[len] == '\0')
-			return ls_snapshot_lookup(sub, end+1);
+			return ls_snapshot_lookup(sub, end + 1);
 	}
 
 	ls_set_errno(LS_NOT_FOUND);
@@ -691,7 +692,7 @@ int ls_snapshot_refresh(ls_handle ssh, uint32_t max_depth, void(*cb)(const char 
 
 				ls_close(ss->subtree[i]);
 				for (j = i; j < ss->subtree_count - 1; j++)
-					ss->subtree[j] = ss->subtree[j+1];
+					ss->subtree[j] = ss->subtree[j + 1];
 				ss->subtree_count--;
 				i--;
 				ss->subtree[i] = NULL;
@@ -699,7 +700,7 @@ int ls_snapshot_refresh(ls_handle ssh, uint32_t max_depth, void(*cb)(const char 
 		}
 
 		// add new subdirectories
-	
+
 		dh = ls_opendir(ss->path);
 		if (!dh)
 		{

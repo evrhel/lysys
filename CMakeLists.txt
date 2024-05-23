@@ -10,6 +10,7 @@ set(LYSYS_SOURCES
     ${src}/ls_core.c
     ${src}/ls_event.c
     ${src}/ls_file.c
+    ${src}/ls_file_priv.c
     ${src}/ls_font.c
     ${src}/ls_ioutils.c
     ${src}/ls_handle.c

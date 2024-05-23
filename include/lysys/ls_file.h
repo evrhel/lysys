@@ -36,16 +36,25 @@
 
 // Open the file for asynchronous I/O
 // On Windows, this will cause synchronous I/O operations to fail
-#define LS_FLAG_ASYNC 0x10000
+#define LS_FLAG_ASYNC 0x1000
 
 // Optimize the file for random access
-#define LS_FLAG_RANDOM 0x20000
+#define LS_FLAG_RANDOM 0x2000
 
 // Optimize the file for sequential access
-#define LS_FLAG_SEQUENTIAL 0x40000
+#define LS_FLAG_SEQUENTIAL 0x4000
 
 // Child processes inherit the file handle
-#define LS_FLAG_INHERIT 0x80000
+#define LS_FLAG_INHERIT 0x8000
+
+// Create the read end of an anonymous pipe for asynchronous I/O
+#define LS_ANON_PIPE_READ_ASYNC 0x10000
+
+// Create the write end of an anonymous pipe for asynchronous I/O
+#define LS_ANON_PIPE_WRITE_ASYNC 0x20000
+
+// Create both ends of an anonymous pipe for asynchronous I/O
+#define LS_ANON_PIPE_ASYNC (LS_ANON_PIPE_READ_ASYNC | LS_ANON_PIPE_WRITE_ASYNC)
 
 //
 /////////////////////////////////////////////////////////////////////
@@ -369,11 +378,16 @@ int ls_createdirs(const char *path);
 
 //! \brief Create an anonymous pipe
 //! 
+//! If a pipe end is opened for asynchronous I/O, it cannot be used
+//! for process I/O redirection.
+//! 
 //! \param read A pointer to a handle that will receive the read end
 //! of the pipe
 //! \param write A pointer to a handle that will receive the write
 //! end of the pipe
-//! \param flags Flags for the pipe creation
+//! \param flags Flags for the pipe creation. Use a combination of
+//! LS_ANON_PIPE_WRITE_ASYNC and LS_ANON_PIPE_READ_ASYNC to create
+//! an asynchronous pipe.
 //! 
 //! \return 0 if the pipe was successfully created, -1 if an error
 //! occurred.
@@ -381,28 +395,26 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags);
 
 //! \brief Create a named pipe.
 //! 
-//! Creates a named pipe with the specified name. The pipe is created
-//! in a system-specific location and can be opened by other processes
-//! using the same name. The pipe may be used as if it were a file. All
-//! pipes are read/write and blocking unless LS_FLAG_ASYNC is specified.
-//! 
 //! \param name Name of the pipe.
 //! \param flags Pipe creation flags.
-//! 
-//! \return Handle to the pipe or NULL on failure.
-ls_handle ls_mkfifo(const char *name, int flags);
+//! \param wait Whether to wait for a client to connect to the pipe.
+//! If the pipe is asynchronous, this parameter is ignored.
+//!
+//! \return Handle to the named pipe, or NULL if an error occurred.
+ls_handle ls_named_pipe(const char *name, int flags, int wait);
 
-//! \brief Open a named pipe.
+//! \brief Wait for a named pipe to connect.
 //! 
-//! The semantics of this function are the same as ls_open, but the name
-//! parameter is used to specify the name of the pipe rather than a file
-//! path.
+//! \param fh Handle to the named pipe.
+//! \param timeout Timeout in milliseconds. Use 0 to check if the
+//! pipe is connected without waiting. If the pipe is not asynchronous,
+//! and this parameter is nonzero, the function will block indefinitely
+//! until the pipe is connected or an error occurs.
 //! 
-//! \param name Name of the pipe.
-//! \param flags Pipe access flags. Implicitly LS_FILE_READ | LS_FILE_WRITE. Optionally
-//! may include LS_FLAG_ASYNC for non-blocking I/O.
-//! 
-//! \return Handle to the pipe or NULL on failure.
-ls_handle ls_pipe_open(const char *name, int access);
+//! \return 0 if the pipe is connected, -1 if an error occurred,
+//! or 1 if the timeout expired.
+int ls_named_pipe_wait(ls_handle fh, unsigned long timeout);
+
+ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout);
 
 #endif // _LS_FILE_H_

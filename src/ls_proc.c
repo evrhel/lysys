@@ -9,6 +9,7 @@
 #include "ls_handle.h"
 #include "ls_buffer.h"
 #include "ls_util.h"
+#include "ls_file_priv.h"
 
 #include <stdlib.h>
 #include <memory.h>
@@ -206,6 +207,7 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 	DWORD dwErr;
 	DWORD dwFlags = 0;
 	int err;
+	struct ls_file *pf;
 
 	lpCmd = ls_build_command_line(path, argv);
 	if (!lpCmd)
@@ -240,21 +242,51 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 		{
 			if (info->hstdin && info->hstdin != LS_STDIN)
 			{
-				ph->si.hStdInput = ls_resolve_file(info->hstdin);
+				pf = ls_resolve_file(info->hstdin);
+				if (!pf)
+					goto generic_error;
+
+				if (pf->is_async)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdInput = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdInput, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}
 
 			if (info->hstdout && info->hstdout != LS_STDOUT)
 			{
-				ph->si.hStdOutput = ls_resolve_file(info->hstdout);
+				pf = ls_resolve_file(info->hstdin);
+				if (!pf)
+					goto generic_error;
+
+				if (pf->is_async)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdOutput = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdOutput, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}
 
 			if (info->hstderr && info->hstderr != LS_STDERR)
 			{
-				ph->si.hStdError = ls_resolve_file(info->hstderr);
+				pf = ls_resolve_file(info->hstdin);
+				if (!pf)
+					goto generic_error;
+
+				if (pf->is_async)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdError = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdError, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}

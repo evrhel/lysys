@@ -1,7 +1,6 @@
 #include <lysys/ls_random.h>
 
 #include <math.h>
-#include <Security/Security.h>
 
 #include "ls_native.h"
 

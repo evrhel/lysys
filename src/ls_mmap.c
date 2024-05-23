@@ -7,6 +7,7 @@
 
 #include "ls_handle.h"
 #include "ls_native.h"
+#include "ls_file_priv.h"
 
 static void ls_mmap_dtor(void *map)
 {
@@ -29,7 +30,7 @@ static const struct ls_class FileMappingClass = {
 void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle *map)
 {
 #if LS_WINDOWS
-	HANDLE hFile;
+	struct ls_file *pf;
 	HANDLE hMap;
 	handle_t handle;
 	LARGE_INTEGER liSize;
@@ -50,17 +51,23 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 
 	if (protect & LS_PROT_WRITECOPY)
 		dwAccess |= FILE_MAP_COPY;
-	
+
 	if (size == 0)
 		liSize.QuadPart = 0;
 	else
 		liSize.QuadPart = size + offset;
 
-	hFile = ls_resolve_file(file);
-	if (!hFile)
+	pf = ls_resolve_file(file);
+	if (!pf)
 		return NULL;
 
-	hMap = CreateFileMappingW(hFile, NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
+	if (pf->is_async)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	hMap = CreateFileMappingW(pf->hFile, NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
 	if (!hMap)
 	{
 		ls_set_errno_win32(GetLastError());
@@ -98,43 +105,43 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	size_t *map_res;
 
 	fd = ls_resolve_file(file);
-	
+
 	if (!map)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
-	
+
 	rc = fstat(fd, &st);
 	if (rc != 0)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
 		return NULL;
 	}
-	
+
 	if (offset > st.st_size)
 	{
 		ls_set_errno(LS_OUT_OF_RANGE);
 		return NULL;
 	}
-	
+
 	max_size = st.st_size - offset;
 	if (size == 0)
 		size = max_size;
 	else if (size > max_size)
 		return NULL;
-	
+
 	map_res = ls_handle_create(&FileMappingClass);
 	if (!map_res)
 		return NULL;
-	
+
 	prot = ls_protect_to_flags(protect);
-	
+
 	if (protect & LS_PROT_WRITECOPY)
 		flags |= MAP_PRIVATE;
 	else
 		flags |= MAP_SHARED;
-	
+
 	addr = mmap(NULL, size, protect, flags, fd, offset);
 	if (!addr)
 	{
@@ -142,9 +149,9 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 		ls_handle_dealloc(map_res);
 		return NULL;
 	}
-	
+
 	*map_res = size;
-	
+
 	return addr;
 #endif // LS_WINDOWS
 }

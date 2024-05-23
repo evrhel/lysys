@@ -85,6 +85,7 @@ int win32_to_error(DWORD err);
 #include <sys/resource.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
+#include <Security/Security.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/ps/IOPowerSources.h>
 #include <IOKit/ps/IOPSKeys.h>
@@ -115,8 +116,6 @@ int ls_create_to_oflags(int create);
 
 native_flags_t ls_protect_to_flags(int protect);
 int ls_flags_to_protect(native_flags_t prot);
-
-native_file_t ls_resolve_file(ls_handle fh);
 
 #if LS_DARWIN
 int kr_to_error(kern_return_t kr);

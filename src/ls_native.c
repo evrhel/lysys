@@ -182,7 +182,7 @@ LPWSTR ls_build_command_line(const char *path, const char *argv[])
 			argv++;
 		}
 	}
-	
+
 	// 1024 should be enough for most cases, will grow if needed
 	rc = ls_buffer_reserve(&buf, 1024);
 	if (rc == -1) goto done;
@@ -226,7 +226,7 @@ LPWSTR ls_build_environment(const char *envp[])
 	int rc;
 
 	LPWSTR str = NULL;
-	
+
 	if (!envp)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
@@ -298,13 +298,13 @@ int win32_to_error(DWORD err)
 	case ERROR_SEEK: return LS_INVALID_ARGUMENT;
 	case ERROR_NOT_DOS_DISK: return LS_INVALID_PATH;
 	case ERROR_SECTOR_NOT_FOUND: return LS_NOT_FOUND;
-	
+
 	case ERROR_WRITE_FAULT: return LS_IO_ERROR;
 	case ERROR_READ_FAULT: return LS_IO_ERROR;
 	case ERROR_GEN_FAILURE: return LS_UNKNOWN_ERROR;
 	case ERROR_SHARING_VIOLATION: return LS_SHARING_VIOLATION;
 	case ERROR_LOCK_VIOLATION: return LS_SHARING_VIOLATION;
-	
+
 	case ERROR_SHARING_BUFFER_EXCEEDED: return LS_OUT_OF_MEMORY;
 	case ERROR_HANDLE_EOF: return LS_END_OF_FILE;
 	case ERROR_HANDLE_DISK_FULL: return LS_DISK_FULL;
@@ -330,9 +330,9 @@ int win32_to_error(DWORD err)
 	case ERROR_REDIR_PAUSED: return LS_BUSY;
 	case ERROR_FILE_EXISTS: return LS_ALREADY_EXISTS;
 	case ERROR_CANNOT_MAKE: return LS_ACCESS_DENIED;
-	
+
 	case ERROR_OUT_OF_STRUCTURES: return LS_OUT_OF_MEMORY;
-	
+
 	case ERROR_INVALID_PARAMETER: return LS_INVALID_ARGUMENT;
 	case ERROR_NET_WRITE_FAULT: return LS_IO_ERROR;
 	case ERROR_NO_PROC_SLOTS: return LS_OUT_OF_MEMORY;
@@ -345,7 +345,7 @@ int win32_to_error(DWORD err)
 	case ERROR_DISK_FULL: return LS_DISK_FULL;
 	case ERROR_NO_MORE_SEARCH_HANDLES: return LS_OUT_OF_MEMORY;
 	case ERROR_INVALID_TARGET_HANDLE: return LS_INVALID_HANDLE;
-	
+
 	case ERROR_BAD_DRIVER_LEVEL: return LS_INVALID_ARGUMENT;
 	case ERROR_CALL_NOT_IMPLEMENTED: return LS_NOT_IMPLEMENTED;
 	case ERROR_SEM_TIMEOUT: return LS_TIMEDOUT;
@@ -376,7 +376,7 @@ int win32_to_error(DWORD err)
 	case ERROR_BUSY: return LS_BUSY;
 	case ERROR_DEVICE_SUPPORT_IN_PROGRESS: return LS_BUSY;
 	case ERROR_CANCEL_VIOLATION: return LS_INVALID_STATE;
-	
+
 	case ERROR_INVALID_FLAG_NUMBER: return LS_INVALID_ARGUMENT;
 	case ERROR_INVALID_MODULETYPE: return LS_INVALID_IMAGE;
 	case ERROR_INVALID_EXE_SIGNATURE: return LS_INVALID_IMAGE;
@@ -508,13 +508,13 @@ int win32_to_error(DWORD err)
 	case ERROR_DLL_NOT_FOUND: return LS_NOT_FOUND;
 	case ERROR_NO_MORE_USER_HANDLES: return LS_OUT_OF_MEMORY;
 	case ERROR_MESSAGE_SYNC_ONLY: return LS_INVALID_STATE;
-	
+
 	case ERROR_DEVICE_NOT_CONNECTED: return LS_INVALID_STATE;
 	case ERROR_NOT_FOUND: return LS_NOT_FOUND;
 	case ERROR_NO_MATCH: return LS_NOT_FOUND;
 
 	case ERROR_NO_VOLUME_ID: return LS_NOT_FOUND;
-	
+
 	case ERROR_CANCELLED: return LS_CANCELED;
 
 	case ERROR_REQUEST_ABORTED: return LS_INTERRUPTED;
@@ -619,14 +619,14 @@ int ls_errno_to_error(int err)
 #ifdef ENOPKG
 	case ENOPKG: return LS_NOT_FOUND;
 #endif // ENOPKG
-			
+
 	case EBADMSG: return LS_INVALID_STATE;
 	case EOVERFLOW: return LS_OUT_OF_RANGE;
 
 #ifdef EBADFD
 	case EBADFD: return LS_INVALID_HANDLE;
 #endif // EBADFD
-			
+
 	case EOPNOTSUPP: return LS_NOT_SUPPORTED;
 
 	case ENETDOWN: return LS_INVALID_STATE;
@@ -702,16 +702,16 @@ native_flags_t ls_protect_to_flags(int protect)
 	return flProtect;
 #else
 	int prot = 0;
-	
+
 	if (protect & LS_PROT_READ)
 		prot |= PROT_READ;
-	
+
 	if (protect & (LS_PROT_WRITE | LS_PROT_WRITECOPY))
 		prot |= PROT_WRITE;
-	
+
 	if (protect & LS_PROT_EXEC)
 		prot |= PROT_EXEC;
-	
+
 	return prot;
 #endif // LS_WINDOWS
 }
@@ -736,52 +736,17 @@ int ls_flags_to_protect(native_flags_t prot)
 	return protect;
 #else
 	int protect = 0;
-	
+
 	if (prot & PROT_READ)
 		protect |= LS_PROT_READ;
-	
+
 	if (prot & PROT_WRITE)
 		protect |= LS_PROT_WRITE;
-	
+
 	if (prot & PROT_EXEC)
 		protect |= LS_PROT_EXEC;
-	
+
 	return protect;
-#endif // LS_WINDOWS
-}
-
-native_file_t ls_resolve_file(ls_handle fh)
-{
-#if LS_WINDOWS
-	HANDLE hFile;
-
-	switch ((intptr_t)fh)
-	{
-	case -1:
-	case 0: ls_set_errno(LS_INVALID_HANDLE); return NULL;
-	case LS_STDIN: hFile = GetStdHandle(STD_INPUT_HANDLE); break;
-	case LS_STDOUT: hFile = GetStdHandle(STD_OUTPUT_HANDLE); break;
-	case LS_STDERR: hFile = GetStdHandle(STD_ERROR_HANDLE); break;
-	default: return *(PHANDLE)fh;
-	}
-
-	if (hFile == INVALID_HANDLE_VALUE)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
-		return NULL;
-	}
-
-	return hFile;
-#else
-	switch ((intptr_t)fh)
-	{
-	case -1:
-	case 0: ls_set_errno(LS_INVALID_HANDLE); return -1;
-	case (intptr_t)LS_STDIN: return 0;
-	case (intptr_t)LS_STDOUT: return 1;
-	case (intptr_t)LS_STDERR: return 2;
-	default: return *(int *)fh;
-	}
 #endif // LS_WINDOWS
 }
 
