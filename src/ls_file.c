@@ -159,7 +159,6 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	BOOL bRet;
 	DWORD dwRead, dwToRead;
 	size_t remaining;
-	OVERLAPPED ol;
 
 	pf = ls_resolve_file(fh);
 	if (!pf)
@@ -168,22 +167,7 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	dwToRead = (DWORD)(size & 0xffffffff);
 
 	if (pf->is_async)
-	{
-		ZeroMemory(&ol, sizeof(ol));
-
-		bRet = ReadFile(pf->hFile, buffer, dwToRead, NULL, &ol);
-		if (!bRet)
-		{
-			if (GetLastError() != ERROR_IO_PENDING)
-				return ls_set_errno_win32(GetLastError());
-		}
-
-		bRet = GetOverlappedResult(pf->hFile, &ol, &dwRead, TRUE);
-		if (!bRet)
-			return ls_set_errno_win32(GetLastError());
-
-		return dwRead;
-	}
+		return ls_set_errno(LS_INVALID_HANDLE);
 
 	remaining = size;
 
@@ -240,7 +224,6 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	BOOL bRet;
 	DWORD dwWritten, dwToWrite;
 	size_t remaining;
-	OVERLAPPED ol;
 
 	pf = ls_resolve_file(fh);
 	if (!pf)
@@ -249,22 +232,7 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	dwToWrite = (DWORD)(size & 0xffffffff);
 
 	if (pf->is_async)
-	{
-		ZeroMemory(&ol, sizeof(ol));
-
-		bRet = WriteFile(pf->hFile, buffer, dwToWrite, NULL, &ol);
-		if (!bRet)
-		{
-			if (GetLastError() != ERROR_IO_PENDING)
-				return ls_set_errno_win32(GetLastError());
-		}
-
-		bRet = GetOverlappedResult(pf->hFile, &ol, &dwWritten, TRUE);
-		if (!bRet)
-			return ls_set_errno_win32(GetLastError());
-
-		return dwWritten;
-	}
+		return ls_set_errno(LS_INVALID_HANDLE);
 
 	remaining = size;
 
@@ -341,6 +309,11 @@ int ls_flush(ls_handle file)
 
 struct ls_aio
 {
+	ls_lock_t lock;
+
+	ls_aio_completion_fn callback;
+	void *param;
+
 #if LS_WINDOWS
 	OVERLAPPED ol;
 	HANDLE hFile;
@@ -349,8 +322,8 @@ struct ls_aio
 	ls_lock_t lock;
 	ls_cond_t cond;
 	ssize_t bytes_transferred; // -1 = no transfers
-	int status;
 	int error;
+	int status;
 #endif // LS_WINDOWS
 };
 
@@ -455,7 +428,7 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 #if LS_WINDOWS
 	DWORD dwRet;
 
-	dwRet = WaitForSingleObject(aio->ol.hEvent, ms);
+	dwRet = WaitForSingleObjectEx(aio->ol.hEvent, ms, TRUE);
 
 	if (dwRet == WAIT_OBJECT_0)
 		return 0;
@@ -486,6 +459,48 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 #endif // LS_WINDOWS
 }
 
+#if LS_WINDOWS
+
+static void CALLBACK overlapped_completion(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, struct ls_aio *aio)
+{
+	ls_aio_completion_fn callback;
+	void *param;
+	int status;
+	size_t transferred;
+
+	lock_lock(&aio->lock);
+	callback = aio->callback;
+	param = aio->param;
+	lock_unlock(&aio->lock);
+
+	if (!callback)
+		return;
+
+	ls_set_errno_win32(dwErrorCode);
+
+	switch (dwErrorCode)
+	{
+	default:
+		status = LS_AIO_ERROR;
+		break;
+	case 0:
+		status = LS_AIO_COMPLETED;
+		break;
+	case ERROR_IO_INCOMPLETE:
+		status = LS_AIO_PENDING;
+		break;
+	case ERROR_OPERATION_ABORTED:
+		status = LS_AIO_CANCELED;
+		break;
+	}
+
+	transferred = dwNumberOfBytesTransfered;
+
+	callback(aio, status, transferred, param);
+}
+
+#endif // LS_WINDOWS
+
 static const struct ls_class AioClass = {
 	.type = LS_AIO,
 	.cb = sizeof(struct ls_aio),
@@ -498,6 +513,7 @@ ls_handle ls_aio_open(ls_handle fh)
 #if LS_WINDOWS
 	struct ls_aio *aio;
 	struct ls_file *pf;
+	int rc;
 
 	pf = ls_resolve_file(fh);
 	if (!pf)
@@ -513,10 +529,18 @@ ls_handle ls_aio_open(ls_handle fh)
 	if (!aio)
 		return NULL;
 
+	rc = lock_init(&aio->lock);
+	if (rc == -1)
+	{
+		ls_handle_dealloc(aio);
+		return NULL;
+	}
+
 	aio->ol.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 	if (!aio->ol.hEvent)
 	{
 		ls_set_errno_win32(GetLastError());
+		lock_destroy(&aio->lock);
 		ls_handle_dealloc(aio);
 		return NULL;
 	}
@@ -529,6 +553,8 @@ ls_handle ls_aio_open(ls_handle fh)
 	int fd;
 	int rc;
 	struct sigevent *sev;
+
+	// TODO: initialize lock
 
 	fd = ls_resolve_file(fh);
 	if (fd == -1)
@@ -569,7 +595,12 @@ ls_handle ls_aio_open(ls_handle fh)
 #endif // LS_WINDOWS
 }
 
-int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size)
+#if LS_WINDOWS
+
+
+#endif // LS_WINDOWS
+
+int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio;
@@ -577,31 +608,54 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	DWORD dwToRead;
 	DWORD dwErr;
 	ULARGE_INTEGER uliOffset = { .QuadPart = offset };
+	DWORD dwTransferred;
 
 	if (!aioh)
 		return ls_set_errno(LS_INVALID_HANDLE);
 
+	if (!buffer || size == 0)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
 	aio = aioh;
+	lock_lock(&aio->lock);
+
+	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	if (!b)
+	{
+		dwErr = GetLastError();
+		lock_unlock(&aio->lock);
+		return ls_set_errno_win32(dwErr);
+	}
 
 	aio->ol.Offset = uliOffset.LowPart;
 	aio->ol.OffsetHigh = uliOffset.HighPart;
 
 	if (!ResetEvent(aio->ol.hEvent))
-		return ls_set_errno_win32(GetLastError());
+	{
+		dwErr = GetLastError();
+		lock_unlock(&aio->lock);
+		return ls_set_errno_win32(dwErr);
+	}
 
 	dwToRead = (DWORD)(size & 0xffffffff);
-	b = ReadFile(aio->hFile, (LPVOID)buffer, dwToRead, NULL, &aio->ol);
+	b = ReadFileEx(aio->hFile, (LPVOID)buffer, dwToRead, &aio->ol, (LPOVERLAPPED_COMPLETION_ROUTINE)&overlapped_completion);
 	if (!b)
 	{
 		dwErr = GetLastError();
-		if (dwErr == ERROR_IO_PENDING)
-			return 0;
+		if (dwErr != ERROR_IO_PENDING)
+		{
+			ls_set_errno_win32(dwErr);
+			SetEvent(aio->ol.hEvent); // prevent deadlock
 
-		ls_set_errno_win32(dwErr);
-		SetEvent(aio->ol.hEvent); // prevent deadlock
-		return -1;
+			lock_unlock(&aio->lock);
+			return -1;
+		}
 	}
 
+	aio->callback = callback;
+	aio->param = param;
+
+	lock_unlock(&aio->lock);
 	return 0;
 #else
 	struct ls_aio *aio;
@@ -640,7 +694,7 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 #endif // LS_WINDOWS
 }
 
-int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size)
+int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio;
@@ -648,31 +702,49 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	DWORD dwToWrite;
 	DWORD dwErr;
 	ULARGE_INTEGER uliOffset = { .QuadPart = offset };
+	DWORD dwTransferred;
 
 	if (!aioh)
 		return ls_set_errno(LS_INVALID_HANDLE);
 
 	aio = aioh;
 
+	lock_lock(&aio->lock);
+
+	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	if (!b)
+	{
+		dwErr = GetLastError();
+		lock_unlock(&aio->lock);
+		return ls_set_errno_win32(dwErr);
+	}
+
 	aio->ol.Offset = uliOffset.LowPart;
 	aio->ol.OffsetHigh = uliOffset.HighPart;
 
 	if (!ResetEvent(aio->ol.hEvent))
-		return ls_set_errno_win32(GetLastError());
+	{
+		dwErr = GetLastError();
+		lock_unlock(&aio->lock);
+		return ls_set_errno_win32(dwErr);
+	}
 
 	dwToWrite = (DWORD)(size & 0xffffffff);
-	b = WriteFile(aio->hFile, (LPCVOID)buffer, dwToWrite, NULL, &aio->ol);
+	b = WriteFileEx(aio->hFile, (LPCVOID)buffer, dwToWrite, &aio->ol, (LPOVERLAPPED_COMPLETION_ROUTINE)&overlapped_completion);
 	if (!b)
 	{
 		dwErr = GetLastError();
-		if (dwErr == ERROR_IO_PENDING)
-			return 0;
+		if (dwErr != ERROR_IO_PENDING)
+		{
+			ls_set_errno_win32(dwErr);
+			SetEvent(aio->ol.hEvent); // prevent deadlock
 
-		ls_set_errno_win32(dwErr);
-		SetEvent(aio->ol.hEvent); // prevent deadlock
-		return -1;
+			lock_unlock(&aio->lock);
+			return -1;
+		}
 	}
 
+	lock_unlock(&aio->lock);
 	return 0;
 #else
 	struct ls_aio *aio;
@@ -711,7 +783,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 #endif // LS_WINDOWS
 }
 
-int ls_aio_status(ls_handle aioh, size_t *transferred)
+int ls_aio_status(ls_handle aioh, size_t *transferred, int alertable)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio = aioh;
@@ -719,10 +791,17 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 	BOOL b;
 	DWORD dwErr;
 
-	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	if (!aioh)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	lock_lock(&aio->lock);
+
+	b = GetOverlappedResultEx(aio->hFile, &aio->ol, &dwTransferred, 0, alertable);
 	if (!b)
 	{
 		dwErr = GetLastError();
+
+		lock_unlock(&aio->lock);
 
 		if (dwErr == ERROR_IO_INCOMPLETE)
 			return LS_AIO_PENDING;
@@ -732,6 +811,8 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 
 		return ls_set_errno_win32(dwErr);
 	}
+
+	lock_unlock(&aio->lock);
 
 	*transferred = dwTransferred;
 

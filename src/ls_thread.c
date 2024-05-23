@@ -318,6 +318,7 @@ static void CALLBACK ls_apc_func(ULONG_PTR Parameter)
 {
 	struct ls_apc_info *info = (struct ls_apc_info *)Parameter;
 	info->routine(info->arg);
+	ls_free(info);
 }
 
 #endif // LS_WINDOWS

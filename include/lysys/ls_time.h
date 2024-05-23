@@ -22,8 +22,19 @@ void ls_get_time(struct ls_timespec *ts);
 
 void ls_get_local_time(struct ls_timespec *ts);
 
+//! \brief Sleep for a number of milliseconds.
+//! 
+//! \param ms The minimum number of milliseconds to sleep.
 void ls_sleep(unsigned long ms);
 
+//! \brief Sleep in an alertable state for a number of milliseconds.
+//! 
+//! \param ms The minimum number of milliseconds to sleep.
+void ls_sleep_alertable(unsigned long ms);
+
+//! \brief Sleep for a number of nanoseconds.
+//! 
+//! \param ns The minimum number of nanoseconds to sleep.
 void ls_nanosleep(long long ns);
 
 #endif // _LYSYS_H_

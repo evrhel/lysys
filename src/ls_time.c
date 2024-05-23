@@ -141,6 +141,16 @@ void ls_sleep(unsigned long ms)
 #endif // LS_WINDOWS
 }
 
+void ls_sleep_alertable(unsigned long ms)
+{
+#if LS_WINDOWS
+	SleepEx(ms, TRUE);
+#else
+	// TODO: Implement ls_sleep_alertable
+	ls_sleep(ms);
+#endif
+}
+
 void ls_nanosleep(long long ns)
 {
 #if LS_WINDOWS
