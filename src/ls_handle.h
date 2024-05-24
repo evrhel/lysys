@@ -21,6 +21,7 @@
 #define LS_PERF_MONITOR 11
 #define LS_AIO (12 | LS_WAITABLE)
 #define LS_SNAPSHOT 13
+#define LS_IO_BUFFER 14
 
 // handle is statically allocated, will never have memory deallocated
 // or destructor called

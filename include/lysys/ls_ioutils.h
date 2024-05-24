@@ -71,4 +71,12 @@ size_t ls_fprintf(ls_handle fh, const char *format, ...);
 
 size_t ls_vfprintf(ls_handle fh, const char *format, va_list args);
 
+ls_handle ls_create_io_buffer(ls_handle fh, int access);
+
+size_t ls_io_buffer_read(ls_handle ioh, void *buffer, size_t size);
+
+size_t ls_io_buffer_write(ls_handle ioh, const void *buffer, size_t size);
+
+int ls_io_buffer_flush(ls_handle ioh);
+
 #endif // _LS_IOUTILS_H_
