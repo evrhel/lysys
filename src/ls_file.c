@@ -310,10 +310,6 @@ int ls_flush(ls_handle file)
 struct ls_aio
 {
 	ls_lock_t lock;
-
-	ls_aio_completion_fn callback;
-	void *param;
-
 #if LS_WINDOWS
 	OVERLAPPED ol;
 	HANDLE hFile;
@@ -459,48 +455,6 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 #endif // LS_WINDOWS
 }
 
-#if LS_WINDOWS
-
-static void CALLBACK overlapped_completion(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, struct ls_aio *aio)
-{
-	ls_aio_completion_fn callback;
-	void *param;
-	int status;
-	size_t transferred;
-
-	lock_lock(&aio->lock);
-	callback = aio->callback;
-	param = aio->param;
-	lock_unlock(&aio->lock);
-
-	if (!callback)
-		return;
-
-	ls_set_errno_win32(dwErrorCode);
-
-	switch (dwErrorCode)
-	{
-	default:
-		status = LS_AIO_ERROR;
-		break;
-	case 0:
-		status = LS_AIO_COMPLETED;
-		break;
-	case ERROR_IO_INCOMPLETE:
-		status = LS_AIO_PENDING;
-		break;
-	case ERROR_OPERATION_ABORTED:
-		status = LS_AIO_CANCELED;
-		break;
-	}
-
-	transferred = dwNumberOfBytesTransfered;
-
-	callback(aio, status, transferred, param);
-}
-
-#endif // LS_WINDOWS
-
 static const struct ls_class AioClass = {
 	.type = LS_AIO,
 	.cb = sizeof(struct ls_aio),
@@ -619,6 +573,7 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	aio = aioh;
 	lock_lock(&aio->lock);
 
+	// check if the previous operation has completed
 	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
 	if (!b)
 	{
@@ -638,7 +593,7 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	}
 
 	dwToRead = (DWORD)(size & 0xffffffff);
-	b = ReadFileEx(aio->hFile, (LPVOID)buffer, dwToRead, &aio->ol, (LPOVERLAPPED_COMPLETION_ROUTINE)&overlapped_completion);
+	b = ReadFile(aio->hFile, (LPVOID)buffer, dwToRead, NULL, &aio->ol);
 	if (!b)
 	{
 		dwErr = GetLastError();
@@ -651,9 +606,6 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 			return -1;
 		}
 	}
-
-	aio->callback = callback;
-	aio->param = param;
 
 	lock_unlock(&aio->lock);
 	return 0;
@@ -694,7 +646,7 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 #endif // LS_WINDOWS
 }
 
-int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param)
+int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio;
@@ -711,6 +663,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 
 	lock_lock(&aio->lock);
 
+	// check if the previous operation has completed
 	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
 	if (!b)
 	{
@@ -730,7 +683,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	}
 
 	dwToWrite = (DWORD)(size & 0xffffffff);
-	b = WriteFileEx(aio->hFile, (LPCVOID)buffer, dwToWrite, &aio->ol, (LPOVERLAPPED_COMPLETION_ROUTINE)&overlapped_completion);
+	b = WriteFile(aio->hFile, (LPCVOID)buffer, dwToWrite, NULL, &aio->ol);
 	if (!b)
 	{
 		dwErr = GetLastError();
@@ -783,7 +736,7 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 #endif // LS_WINDOWS
 }
 
-int ls_aio_status(ls_handle aioh, size_t *transferred, int alertable)
+int ls_aio_status(ls_handle aioh, size_t *transferred)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio = aioh;
@@ -796,7 +749,7 @@ int ls_aio_status(ls_handle aioh, size_t *transferred, int alertable)
 
 	lock_lock(&aio->lock);
 
-	b = GetOverlappedResultEx(aio->hFile, &aio->ol, &dwTransferred, 0, alertable);
+	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
 	if (!b)
 	{
 		dwErr = GetLastError();

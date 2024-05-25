@@ -347,7 +347,7 @@ static DWORD CALLBACK ls_watch_worker(LPVOID lpParam)
 		}
 
 		// alertable wait for I/O completion
-		dwResult = WaitForSingleObjectEx(w->ov.hEvent, INFINITE, TRUE);	
+		dwResult = WaitForSingleObjectEx(w->ov.hEvent, INFINITE, TRUE);
 		dwErr = GetLastError();
 
 		lock_lock(&w->lock);

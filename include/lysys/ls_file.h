@@ -262,14 +262,9 @@ ls_handle ls_aio_open(ls_handle fh);
 //! \param offset The offset in the file or device to read from
 //! \param buffer A pointer to the buffer to store the data
 //! \param size The number of bytes to read
-//! \param callback An optional callback routine to call when the
-//! asynchronous I/O request completes. The calling thread must be
-//! put into an alertable state to receive the callback.
-//! \param param An optional parameter to pass to the callback
-//! routine
 //! 
 //! \return -1 if an error occurred, 0 if the request was queued
-int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param);
+int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size);
 
 //! \brief Queue an asynchronous write operation
 //! 
@@ -286,14 +281,9 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 //! \param offset The offset in the file or device to write to
 //! \param buffer A pointer to the buffer containing the data
 //! \param size The number of bytes to write
-//! \param callback An optional callback routine to call when the
-//! asynchronous I/O request completes. The calling thread must be
-//! put into an alertable state to receive the callback.
-//! \param param An optional parameter to pass to the callback
-//! routine
 //! 
 //! \return -1 if an error occurred, 0 if the request was queued
-int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param);
+int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, size_t size);
 
 //! \brief Check the status of an asynchronous I/O request
 //!
@@ -304,15 +294,11 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 //! \param aioh The handle to the asynchronous I/O request
 //! \param transferred A pointer to a variable that will receive
 //! the number of bytes transferred
-//! \param alertable Whether to put the calling thread into an
-//! alertable state to trigger any pending I/O completion routines.
-//! Depending on the contents of the completion routines, setting
-//! this parameter to 1 may cause the calling thread to block
 //! 
 //! \return The status of the asynchronous I/O request, one of
 //! LS_AIO_ERROR, LS_AIO_PENDING, LS_AIO_COMPLETED, or
 //! LS_AIO_CANCELED.
-int ls_aio_status(ls_handle aioh, size_t *transferred, int alertable);
+int ls_aio_status(ls_handle aioh, size_t *transferred);
 
 //! \brief Cancel an asynchronous I/O request
 //! 
