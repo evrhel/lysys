@@ -2,6 +2,7 @@
 
 #include <lysys/ls_core.h>
 #include <lysys/ls_memory.h>
+#include <lysys/ls_file.h>
 
 #include <stdlib.h>
 
@@ -30,13 +31,14 @@ static const struct ls_class FileMappingClass = {
 void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle *map)
 {
 #if LS_WINDOWS
-	struct ls_file *pf;
+	ls_file_t *pf;
 	HANDLE hMap;
 	handle_t handle;
 	LARGE_INTEGER liSize;
 	LARGE_INTEGER liOffset = { .QuadPart = offset };
 	LPVOID lpView;
 	DWORD dwAccess = 0;
+	int flags;
 
 	if (protect & (LS_PROT_READ | LS_PROT_WRITE | LS_PROT_WRITECOPY))
 		dwAccess = FILE_MAP_WRITE;
@@ -57,11 +59,11 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	else
 		liSize.QuadPart = size + offset;
 
-	pf = ls_resolve_file(file);
+	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return NULL;
 
-	if (pf->is_async)
+	if (flags & LS_FLAG_ASYNC)
 	{
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
@@ -82,7 +84,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 		return NULL;
 	}
 
-	handle = ls_handle_create(&FileMappingClass);
+	handle = ls_handle_create(&FileMappingClass, 0);
 	if (!handle)
 	{
 		UnmapViewOfFile(lpView);

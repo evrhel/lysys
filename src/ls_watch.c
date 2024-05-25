@@ -710,7 +710,7 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 	WCHAR szPath[MAX_PATH];
 	DWORD dwErr;
 
-	w = ls_handle_create(&WatchClass);
+	w = ls_handle_create(&WatchClass, 0);
 	if (!w)
 		return NULL;
 

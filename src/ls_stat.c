@@ -105,9 +105,10 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	BOOL bRet;
 	BY_HANDLE_FILE_INFORMATION fi;
 	ULARGE_INTEGER uli;
-	struct ls_file *pf;
+	ls_file_t *pf;
+	int flags;
 
-	pf = ls_resolve_file(file);
+	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
 
@@ -263,7 +264,7 @@ ls_handle ls_opendir(const char *path)
 	szPath[len++] = L'*';
 	szPath[len] = L'\0';
 
-	data = ls_handle_create(&DirClass);
+	data = ls_handle_create(&DirClass, 0);
 	if (!data)
 		return NULL;
 
@@ -465,7 +466,7 @@ ls_handle ls_snapshot_dir(const char *path, int flags, uint32_t max_depth)
 		return NULL;
 	}
 
-	ss = ls_handle_create(&SnapshotClass);
+	ss = ls_handle_create(&SnapshotClass, 0);
 	if (!ss)
 		return NULL;
 

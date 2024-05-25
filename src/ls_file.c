@@ -32,19 +32,9 @@
 // -1 for null terminator
 #define MAX_PIPE_PATH (sizeof(PIPE_PREFIX) + LS_MAX_PIPE_NAME - 1)
 
-static void ls_file_dtor(struct ls_file *pf)
+static void ls_file_dtor(ls_file_t *pf)
 {
 #if LS_WINDOWS
-	DWORD dwTransferred;
-
-	if (pf->ov.hEvent)
-	{
-		// wait for pipe connection to close
-		CancelIoEx(pf->hFile, &pf->ov);
-		GetOverlappedResult(pf->hFile, &pf->ov, &dwTransferred, TRUE);
-		CloseHandle(pf->ov.hEvent);
-	}
-
 	CloseHandle(pf->hFile);
 #else
 	(void)close(pf->fd);
@@ -53,7 +43,7 @@ static void ls_file_dtor(struct ls_file *pf)
 
 static const struct ls_class FileClass = {
 	.type = LS_FILE,
-	.cb = sizeof(struct ls_file),
+	.cb = sizeof(ls_file_t),
 	.dtor = (ls_dtor_t)&ls_file_dtor,
 	.wait = NULL
 };
@@ -61,21 +51,21 @@ static const struct ls_class FileClass = {
 ls_handle ls_open(const char *path, int access, int share, int create)
 {
 #if LS_WINDOWS
-	struct ls_file *pf;
+	ls_file_t *pf;
 	HANDLE hFile;
 	DWORD dwDesiredAccess;
 	DWORD dwFlagsAndAttributes;
 	WCHAR szPath[MAX_PATH];
 
 	if (ls_utf8_to_wchar_buf(path, szPath, MAX_PATH) == -1)
-		return NULL;
-
-	pf = ls_handle_create(&FileClass);
-	if (!pf)
-		return NULL;
+		return NULL;	
 
 	dwDesiredAccess = ls_get_access_rights(access);
 	dwFlagsAndAttributes = ls_get_flags_and_attributes(access);
+
+	pf = ls_handle_create(&FileClass, access);
+	if (!pf)
+		return NULL;
 
 	hFile = CreateFileW(szPath, dwDesiredAccess, share, NULL, create,
 		dwFlagsAndAttributes, NULL);
@@ -88,7 +78,6 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 	}
 
 	pf->hFile = hFile;
-	pf->is_async = !!(access & LS_FLAG_ASYNC);
 	return pf;
 #else
 	int *pfd;
@@ -124,14 +113,18 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 {
 #if LS_WINDOWS
-	struct ls_file *pf;
+	ls_file_t *pf;
 	BOOL bRet;
 	LARGE_INTEGER liDist = { .QuadPart = offset };
 	LARGE_INTEGER liNewPointer;
+	int flags;
 
-	pf = ls_resolve_file(file);
+	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
+
+	if (flags & LS_FLAG_ASYNC)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	bRet = SetFilePointerEx(pf->hFile, liDist, &liNewPointer, origin);
 	if (!bRet)
@@ -159,15 +152,19 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	BOOL bRet;
 	DWORD dwRead, dwToRead;
 	size_t remaining;
+	int flags;
 
-	pf = ls_resolve_file(fh);
+	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return -1;
 
-	dwToRead = (DWORD)(size & 0xffffffff);
+	if (flags & LS_FLAG_ASYNC)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	if (pf->is_async)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (!(flags & LS_FILE_READ))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	dwToRead = (DWORD)(size & 0xffffffff);
 
 	remaining = size;
 
@@ -224,15 +221,19 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	BOOL bRet;
 	DWORD dwWritten, dwToWrite;
 	size_t remaining;
+	int flags;
 
-	pf = ls_resolve_file(fh);
+	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return -1;
 
-	dwToWrite = (DWORD)(size & 0xffffffff);
+	if (flags & LS_FLAG_ASYNC)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	if (pf->is_async)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (!(flags & LS_FILE_READ))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	dwToWrite = (DWORD)(size & 0xffffffff);
 
 	remaining = size;
 
@@ -283,10 +284,14 @@ int ls_flush(ls_handle file)
 #if LS_WINDOWS
 	BOOL b;
 	HANDLE hFile;
+	int flags;
 
-	hFile = ls_resolve_file(file);
+	hFile = ls_resolve_file(file, &flags);
 	if (!hFile)
 		return -1;
+
+	if (!(flags & LS_FILE_WRITE))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	b = FlushFileBuffers(hFile);
 	if (!b)
@@ -311,111 +316,18 @@ struct ls_aio
 {
 	ls_lock_t lock;
 #if LS_WINDOWS
-	OVERLAPPED ol;
+	OVERLAPPED ov;
 	HANDLE hFile;
 #else
-	struct aiocb aiocb;
-	ls_lock_t lock;
-	ls_cond_t cond;
-	ssize_t bytes_transferred; // -1 = no transfers
-	int error;
-	int status;
+	// TODO: implement
 #endif // LS_WINDOWS
 };
-
-#if LS_POSIX
-
-//! \brief Update the status and notify waiting threads if necessary
-//!
-//! If the status will not change, the function returns immediately.
-//!
-//! If the status is set to LS_AIO_ERROR, set aio->error to errno
-//! or an equivalent POSIX error code.
-//!
-//! aio->lock must be held by the calling thread.
-//!
-//! \param aio Asynchronous I/O object
-//! \param status New status
-static void ls_aio_update_status(struct ls_aio *aio, int status)
-{
-	if (aio->status == status)
-		return;
-
-	aio->status = status;
-	aio->bytes_transferred = -1;
-
-	if (status == LS_AIO_COMPLETED)
-	{
-		aio->bytes_transferred = aio_return(&aio->aiocb);
-		if (aio->bytes_transferred == -1)
-		{
-			aio->error = errno;
-			aio->status = LS_AIO_ERROR;
-		}
-	}
-
-	cond_broadcast(&aio->cond);
-}
-
-//! \brief Check request status and update the status if necessary
-//!
-//! aio->lock must be held
-//!
-//! \param aio Asynchronous I/O object
-//!
-//! \return If the request has completed, 0 is returned, otherwise
-//! -1 is returned and ls_errno is set.
-static int ls_aio_check_error(struct ls_aio *aio)
-{
-	int rc;
-
-	rc = aio_error(&aio->aiocb);
-	if (rc == 0)
-	{
-		ls_aio_update_status(aio, LS_AIO_COMPLETED);
-		return 0;
-	}
-	else if (rc > 0)
-	{
-		aio->error = rc;
-		ls_aio_update_status(aio, LS_AIO_ERROR);
-
-		// aio->error may have been changed by ls_aio_update_status
-		return ls_set_errno(ls_errno_to_error(aio->error));
-	}
-	else if (rc == EINPROGRESS)
-	{
-		ls_aio_update_status(aio, LS_AIO_PENDING);
-		return ls_set_errno(LS_BUSY);
-	}
-	else if (rc == ECANCELED)
-	{
-		ls_aio_update_status(aio, LS_AIO_CANCELED);
-		return ls_set_errno(LS_CANCELED);
-	}
-
-	// see aio_error(3)
-	__builtin_unreachable();
-}
-
-static void ls_aio_handler(union sigval sigval)
-{
-	struct ls_aio *aio = sigval.sival_ptr;
-
-	lock_lock(&aio->lock);
-
-	(void)ls_aio_check_error(aio);
-
-	lock_unlock(&aio->lock);
-}
-
-#endif // LS_POSIX
 
 static void ls_aio_dtor(struct ls_aio *aio)
 {
 #if LS_WINDOWS
-	CloseHandle(aio->ol.hEvent);
 #else
+	// TODO: implement
 #endif // LS_WINDOWS
 }
 
@@ -424,7 +336,7 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 #if LS_WINDOWS
 	DWORD dwRet;
 
-	dwRet = WaitForSingleObjectEx(aio->ol.hEvent, ms, TRUE);
+	dwRet = WaitForSingleObjectEx(aio->ov.hEvent, ms, TRUE);
 
 	if (dwRet == WAIT_OBJECT_0)
 		return 0;
@@ -434,24 +346,7 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 
 	return ls_set_errno_win32(GetLastError());
 #else
-	int rc;
-	struct timespec ts;
-
-	lock_lock(&aio->lock);
-
-	while (aio->status == LS_AIO_PENDING)
-	{
-		rc = cond_wait(&aio->cond, &aio->lock, ms);
-		if (rc == 1)
-		{
-			lock_unlock(&aio->lock);
-			return 1;
-		}
-	}
-
-	lock_unlock(&aio->lock);
-
-	return 0;
+	// TODO: implement
 #endif // LS_WINDOWS
 }
 
@@ -468,18 +363,19 @@ ls_handle ls_aio_open(ls_handle fh)
 	struct ls_aio *aio;
 	struct ls_file *pf;
 	int rc;
+	int flags;
 
-	pf = ls_resolve_file(fh);
+	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return NULL;
 
-	if (!pf->is_async)
+	if (!(flags & LS_FLAG_ASYNC))
 	{
-		ls_set_errno(LS_INVALID_HANDLE);
+		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
 
-	aio = ls_handle_create(&AioClass);
+	aio = ls_handle_create(&AioClass, flags);
 	if (!aio)
 		return NULL;
 
@@ -490,8 +386,8 @@ ls_handle ls_aio_open(ls_handle fh)
 		return NULL;
 	}
 
-	aio->ol.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-	if (!aio->ol.hEvent)
+	aio->ov.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+	if (!aio->ov.hEvent)
 	{
 		ls_set_errno_win32(GetLastError());
 		lock_destroy(&aio->lock);
@@ -554,7 +450,7 @@ ls_handle ls_aio_open(ls_handle fh)
 
 #endif // LS_WINDOWS
 
-int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size, ls_aio_completion_fn callback, void *param)
+int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t size)
 {
 #if LS_WINDOWS
 	struct ls_aio *aio;
@@ -570,11 +466,14 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	if (!buffer || size == 0)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
+	if (!(LS_HANDLE_INFO(aioh)->flags & LS_FILE_READ))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
 	aio = aioh;
 	lock_lock(&aio->lock);
 
 	// check if the previous operation has completed
-	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	b = GetOverlappedResult(aio->hFile, &aio->ov, &dwTransferred, FALSE);
 	if (!b)
 	{
 		dwErr = GetLastError();
@@ -582,10 +481,10 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 		return ls_set_errno_win32(dwErr);
 	}
 
-	aio->ol.Offset = uliOffset.LowPart;
-	aio->ol.OffsetHigh = uliOffset.HighPart;
+	aio->ov.Offset = uliOffset.LowPart;
+	aio->ov.OffsetHigh = uliOffset.HighPart;
 
-	if (!ResetEvent(aio->ol.hEvent))
+	if (!ResetEvent(aio->ov.hEvent))
 	{
 		dwErr = GetLastError();
 		lock_unlock(&aio->lock);
@@ -593,14 +492,14 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	}
 
 	dwToRead = (DWORD)(size & 0xffffffff);
-	b = ReadFile(aio->hFile, (LPVOID)buffer, dwToRead, NULL, &aio->ol);
+	b = ReadFile(aio->hFile, (LPVOID)buffer, dwToRead, NULL, &aio->ov);
 	if (!b)
 	{
 		dwErr = GetLastError();
 		if (dwErr != ERROR_IO_PENDING)
 		{
 			ls_set_errno_win32(dwErr);
-			SetEvent(aio->ol.hEvent); // prevent deadlock
+			SetEvent(aio->ov.hEvent); // prevent deadlock
 
 			lock_unlock(&aio->lock);
 			return -1;
@@ -659,12 +558,14 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	if (!aioh)
 		return ls_set_errno(LS_INVALID_HANDLE);
 
-	aio = aioh;
+	if (!(LS_HANDLE_INFO(aioh)->flags & LS_FILE_WRITE))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
+	aio = aioh;
 	lock_lock(&aio->lock);
 
 	// check if the previous operation has completed
-	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	b = GetOverlappedResult(aio->hFile, &aio->ov, &dwTransferred, FALSE);
 	if (!b)
 	{
 		dwErr = GetLastError();
@@ -672,10 +573,10 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 		return ls_set_errno_win32(dwErr);
 	}
 
-	aio->ol.Offset = uliOffset.LowPart;
-	aio->ol.OffsetHigh = uliOffset.HighPart;
+	aio->ov.Offset = uliOffset.LowPart;
+	aio->ov.OffsetHigh = uliOffset.HighPart;
 
-	if (!ResetEvent(aio->ol.hEvent))
+	if (!ResetEvent(aio->ov.hEvent))
 	{
 		dwErr = GetLastError();
 		lock_unlock(&aio->lock);
@@ -683,14 +584,14 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	}
 
 	dwToWrite = (DWORD)(size & 0xffffffff);
-	b = WriteFile(aio->hFile, (LPCVOID)buffer, dwToWrite, NULL, &aio->ol);
+	b = WriteFile(aio->hFile, (LPCVOID)buffer, dwToWrite, NULL, &aio->ov);
 	if (!b)
 	{
 		dwErr = GetLastError();
 		if (dwErr != ERROR_IO_PENDING)
 		{
 			ls_set_errno_win32(dwErr);
-			SetEvent(aio->ol.hEvent); // prevent deadlock
+			SetEvent(aio->ov.hEvent); // prevent deadlock
 
 			lock_unlock(&aio->lock);
 			return -1;
@@ -749,7 +650,7 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 
 	lock_lock(&aio->lock);
 
-	b = GetOverlappedResult(aio->hFile, &aio->ol, &dwTransferred, FALSE);
+	b = GetOverlappedResult(aio->hFile, &aio->ov, &dwTransferred, FALSE);
 	if (!b)
 	{
 		dwErr = GetLastError();
@@ -814,7 +715,7 @@ int ls_aio_cancel(ls_handle aioh)
 	if (!aioh)
 		return ls_set_errno(LS_INVALID_HANDLE);
 
-	b = CancelIoEx(aio->hFile, &aio->ol);
+	b = CancelIoEx(aio->hFile, &aio->ov);
 	if (!b)
 		return ls_set_errno_win32(GetLastError());
 
@@ -1121,6 +1022,24 @@ int ls_createdirs(const char *path)
 	return 0;
 }
 
+static void ls_pipe_dtor(ls_pipe_t *pp)
+{
+#if LS_WINDOWS
+	if (pp->ov.hEvent)
+		CloseHandle(pp->ov.hEvent);
+	CloseHandle(pp->hPipe);
+#else
+	(void)close(pf->fd);
+#endif // LS_WINDOWS
+}
+
+static const struct ls_class PipeClass = {
+	.type = LS_PIPE,
+	.cb = sizeof(ls_pipe_t),
+	.dtor = (ls_dtor_t)&ls_pipe_dtor,
+	.wait = NULL
+};
+
 int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 {
 #if LS_WINDOWS
@@ -1131,9 +1050,14 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 	size_t len;
 	DWORD dwWriteMode, dwReadMode;
 	uint64_t serial;
+	int read_async, write_async;
+	int handle_flags;
 
 	if (!read || !write)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	read_async = !!(flags & LS_ANON_PIPE_READ_ASYNC);
+	write_async = !!(flags & LS_ANON_PIPE_WRITE_ASYNC);
 
 	serial = ls_rand_uint64();
 
@@ -1147,22 +1071,23 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 	if (len == -1)
 		return -1;
 
-	pread = ls_handle_create(&FileClass);
+	handle_flags = LS_FILE_READ | (read_async ? LS_FLAG_ASYNC : 0);
+	pread = ls_handle_create(&FileClass, handle_flags);
 	if (!pread)
 		return -1;
 
-	pwrite = ls_handle_create(&FileClass);
+	handle_flags = LS_FILE_WRITE | (write_async ? LS_FLAG_ASYNC : 0);
+	pwrite = ls_handle_create(&FileClass, handle_flags);
 	if (!pwrite)
 	{
 		ls_handle_dealloc(pread);
 		return -1;
 	}
 
-	dwWriteMode = (flags & LS_ANON_PIPE_WRITE_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
-
+	dwWriteMode = write_async ? FILE_FLAG_OVERLAPPED : 0;
 	hRead = CreateNamedPipeW(
 		szName,
-		PIPE_ACCESS_INBOUND | 0,
+		PIPE_ACCESS_INBOUND | dwWriteMode,
 		PIPE_TYPE_BYTE | PIPE_WAIT,
 		1,
 		PIPE_BUF_SIZE,
@@ -1178,8 +1103,7 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 		return ls_set_errno_win32(dwErr);
 	}
 
-	dwReadMode = (flags & LS_ANON_PIPE_READ_ASYNC) ? FILE_FLAG_OVERLAPPED : 0;
-
+	dwReadMode = read_async ? FILE_FLAG_OVERLAPPED : 0;
 	hWrite = CreateFileW(
 		szName,
 		GENERIC_WRITE,
@@ -1199,10 +1123,7 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 	}
 
 	pread->hFile = hRead;
-	//pread->is_async = 1;
-
 	pwrite->hFile = hWrite;
-	//pwrite->is_async = 1;
 
 	*read = pread;
 	*write = pwrite;
@@ -1247,10 +1168,10 @@ int ls_pipe(ls_handle *read, ls_handle *write, int flags)
 #endif // LS_WINDOWS
 }
 
-ls_handle ls_named_pipe(const char *name, int flags, int wait)
+ls_handle ls_named_pipe(const char *name, const int flags, int wait)
 {
 #if LS_WINDOWS
-	struct ls_file *pf;
+	ls_pipe_t *pp;
 	HANDLE hPipe;
 	WCHAR szName[MAX_PATH];
 	size_t len;
@@ -1258,6 +1179,7 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 	DWORD dwMode;
 	int is_async;
 	BOOL b;
+	int handle_flags;
 
 	is_async = !!(flags & LS_FLAG_ASYNC);
 
@@ -1265,8 +1187,12 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 	if (len == -1)
 		return NULL;
 
-	pf = ls_handle_create(&FileClass);
-	if (!pf)
+	handle_flags = LS_FILE_READ | LS_FILE_WRITE;
+	if (is_async)
+		handle_flags |= LS_FLAG_ASYNC;
+
+	pp = ls_handle_create(&PipeClass, handle_flags);
+	if (!pp)
 		return NULL;
 
 	dwMode = is_async ? FILE_FLAG_OVERLAPPED : 0;
@@ -1277,43 +1203,42 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 	if (hPipe == INVALID_HANDLE_VALUE)
 	{
 		dwErr = GetLastError();
-		ls_handle_dealloc(pf);
+		ls_handle_dealloc(pp);
 		ls_set_errno_win32(dwErr);
 		return NULL;
 	}
 
-	pf->hFile = hPipe;
-	pf->is_async = is_async;
+	pp->hPipe = hPipe;
 
 	if (is_async)
 	{
-		b = ConnectNamedPipe(hPipe, &pf->ov);
+		b = ConnectNamedPipe(hPipe, &pp->ov);
 		if (!b)
 		{
 			dwErr = GetLastError();
 			if (dwErr != ERROR_IO_PENDING)
 			{
 				CloseHandle(hPipe);
-				ls_handle_dealloc(pf);
+				ls_handle_dealloc(pp);
 				ls_set_errno_win32(dwErr);
 				return NULL;
 			}
 		}
 	}
-	else if (wait)
+	else if (!wait)
 	{
 		b = ConnectNamedPipe(hPipe, NULL);
 		if (!b)
 		{
 			dwErr = GetLastError();
 			CloseHandle(hPipe);
-			ls_handle_dealloc(pf);
+			ls_handle_dealloc(pp);
 			ls_set_errno_win32(dwErr);
 			return NULL;
 		}
 	}
 
-	return pf;
+	return pp;
 #else
 	int rc;
 	int fd;
@@ -1352,30 +1277,31 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 int ls_named_pipe_wait(ls_handle fh, unsigned long timeout)
 {
 #if LS_WINDOWS
-	struct ls_file *pf;
+	ls_pipe_t *pp;
 	BOOL b;
 	DWORD dwRet;
+	int flags;
 
-	pf = ls_resolve_file(fh);
-	if (!pf)
+	pp = ls_resolve_pipe(fh, &flags);
+	if (!pp)
 		return -1;
 
-	if (pf->connected)
+	if (pp->connected)
 		return 0;
 
 	if (timeout == 0)
-		return pf->connected ? 0 : 1;
+		return pp->connected ? 0 : 1;
 
-	if (pf->is_async)
+	if (flags & LS_FLAG_ASYNC)
 	{
-		dwRet = WaitForSingleObject(pf->ov.hEvent, timeout);
+		dwRet = WaitForSingleObject(pp->ov.hEvent, timeout);
 		if (dwRet == WAIT_OBJECT_0)
 		{
 			// can close the event handle
-			CloseHandle(pf->ov.hEvent);
-			pf->ov.hEvent = NULL;
+			CloseHandle(pp->ov.hEvent);
+			pp->ov.hEvent = NULL;
 
-			pf->connected = 1;
+			pp->connected = 1;
 			return 0;
 		}
 
@@ -1385,11 +1311,11 @@ int ls_named_pipe_wait(ls_handle fh, unsigned long timeout)
 		return ls_set_errno_win32(GetLastError());
 	}
 
-	b = ConnectNamedPipe(pf->hFile, NULL);
+	b = ConnectNamedPipe(pp->hPipe, NULL);
 	if (!b)
 		return ls_set_errno_win32(GetLastError());
 
-	pf->connected = 1;
+	pp->connected = 1;
 	return 0;
 #else
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
@@ -1402,7 +1328,7 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 	WCHAR szPath[MAX_PATH];
 	size_t cb;
 	BOOL b;
-	struct ls_file *pf;
+	ls_pipe_t *pp;
 	int is_async;
 	DWORD dwAccess, dwFlagsAndAttributes;
 
@@ -1427,8 +1353,8 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 		}
 	}
 
-	pf = ls_handle_create(&FileClass);
-	if (!pf)
+	pp = ls_handle_create(&PipeClass, access);
+	if (!pp)
 		return NULL;
 
 	is_async = !!(access & LS_FLAG_ASYNC);
@@ -1446,7 +1372,7 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 		dwFlagsAndAttributes |= FILE_FLAG_OVERLAPPED;
 
 	// open the pipe
-	pf->hFile = CreateFileW(
+	pp->hPipe = CreateFileW(
 		szPath,
 		dwAccess,
 		FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -1454,16 +1380,14 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 		OPEN_EXISTING,
 		dwFlagsAndAttributes,
 		NULL);
-	if (pf->hFile == INVALID_HANDLE_VALUE)
+	if (pp->hPipe == INVALID_HANDLE_VALUE)
 	{
 		ls_set_errno_win32(GetLastError());
-		ls_handle_dealloc(pf);
+		ls_handle_dealloc(pp);
 		return NULL;
 	}
 
-	pf->is_async = is_async;
-
-	return pf;
+	return pp;
 #else
 	char path[MAX_PIPE_PATH];
 	size_t cb;

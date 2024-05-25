@@ -38,7 +38,7 @@ ls_handle ls_lock_create(void)
     ls_lock_t *lock;
     int rc;
     
-    lock = ls_handle_create(&LockClass);
+    lock = ls_handle_create(&LockClass, 0);
     if (!lock)
         return NULL;
     
@@ -72,7 +72,7 @@ ls_handle ls_cond_create(void)
     ls_cond_t *cond;
     int rc;
     
-    cond = ls_handle_create(&ConditionClass);
+    cond = ls_handle_create(&ConditionClass, 0);
     if (!cond)
         return NULL;
     

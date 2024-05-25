@@ -207,7 +207,8 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 	DWORD dwErr;
 	DWORD dwFlags = 0;
 	int err;
-	struct ls_file *pf;
+	ls_file_t *pf;
+	int flags;
 
 	lpCmd = ls_build_command_line(path, argv);
 	if (!lpCmd)
@@ -230,7 +231,7 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 		}
 	}
 
-	ph = ls_handle_create(&ProcClass);
+	ph = ls_handle_create(&ProcClass, 0);
 	if (!ph)
 		goto generic_error;
 
@@ -242,11 +243,11 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 		{
 			if (info->hstdin && info->hstdin != LS_STDIN)
 			{
-				pf = ls_resolve_file(info->hstdin);
+				pf = ls_resolve_file(info->hstdin, &flags);
 				if (!pf)
 					goto generic_error;
 
-				if (pf->is_async)
+				if (flags & LS_FLAG_ASYNC)
 				{
 					ls_set_errno(LS_INVALID_HANDLE);
 					goto generic_error;
@@ -259,11 +260,11 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 
 			if (info->hstdout && info->hstdout != LS_STDOUT)
 			{
-				pf = ls_resolve_file(info->hstdin);
+				pf = ls_resolve_file(info->hstdin, &flags);
 				if (!pf)
 					goto generic_error;
 
-				if (pf->is_async)
+				if (flags & LS_FLAG_ASYNC)
 				{
 					ls_set_errno(LS_INVALID_HANDLE);
 					goto generic_error;
@@ -276,11 +277,11 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 
 			if (info->hstderr && info->hstderr != LS_STDERR)
 			{
-				pf = ls_resolve_file(info->hstdin);
+				pf = ls_resolve_file(info->hstdin, &flags);
 				if (!pf)
 					goto generic_error;
 
-				if (pf->is_async)
+				if (flags & LS_FLAG_ASYNC)
 				{
 					ls_set_errno(LS_INVALID_HANDLE);
 					goto generic_error;
@@ -454,7 +455,7 @@ ls_handle ls_proc_open(unsigned long pid)
 		return NULL;
 	}
 
-	ph = ls_handle_create(&ProcClass);
+	ph = ls_handle_create(&ProcClass, 0);
 	if (!ph)
 	{
 		CloseHandle(hProcess);

@@ -60,7 +60,7 @@ ls_handle ls_event_create(void)
 #if LS_WINDOWS
     struct ls_event *ev;
 
-    ev = ls_handle_create(&EventClass);
+    ev = ls_handle_create(&EventClass, 0);
     if (!ev)
         return NULL;
 

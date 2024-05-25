@@ -8,14 +8,17 @@
 // Psuedo file handles
 //
 
+// Path to the null device (e.g. /dev/null on Unix, NUL on Windows)
+#define LS_DEVNULL ((ls_handle)-9)
+
 // Standard input
-#define LS_STDIN ((ls_handle)1)
+#define LS_STDIN ((ls_handle)-10)
 
 // Standard output
-#define LS_STDOUT ((ls_handle)2)
+#define LS_STDOUT ((ls_handle)-11)
 
 // Standard error
-#define LS_STDERR ((ls_handle)3)
+#define LS_STDERR ((ls_handle)-12)
 
 //
 /////////////////////////////////////////////////////////////////////
@@ -219,33 +222,6 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size);
 //! \return 0 if the data was successfully flushed, -1 if an error
 //! occurred.
 int ls_flush(ls_handle fh);
-
-typedef void(*ls_aio_completion_fn)(ls_handle aioh, int status, size_t transferred, void *param);
-
-//! \brief Open an asynchronous I/O handle
-//! 
-//! Opens an asynchronous I/O handle for the specified file or I/O
-//! device. The handle can be used to perform asynchronous read and
-//! write operations on the file or device.
-//! 
-//! The file or I/O device must be opened with the LS_FLAG_ASYNC flag
-//! to use asynchronous I/O operations and must remain open for the
-//! duration of the asynchronous I/O operations. Close the
-//! handle with ls_close when the asynchronous I/O operations are
-//! complete.
-//! 
-//! The asynchronous I/O handle is not valid for synchronous I/O
-//! operations (e.g. ls_read, ls_write).
-//! 
-//! Use ls_aio_read and ls_aio_write to queue asynchronous read and
-//! write operations on the file or device. Only one asynchronous
-//! I/O operation can be pending on a file or device at a time.
-//! 
-//! \param fh The handle to the file or I/O device
-//! 
-//! \return A handle to the asynchronous I/O request, or NULL if an
-//! error occurred.
-ls_handle ls_aio_open(ls_handle fh);
 
 //! \brief Queue an asynchronous read operation
 //! 

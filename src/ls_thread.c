@@ -107,7 +107,7 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 #if LS_WINDOWS
 	struct ls_thread *th;
 
-	th = ls_handle_create(&ThreadClass);
+	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
 		return NULL;
 
@@ -242,7 +242,7 @@ ls_handle ls_tls_create(void)
 #if LS_WINDOWS
 	struct ls_tls *tls;
 
-	tls = ls_handle_create(&TlsClass);
+	tls = ls_handle_create(&TlsClass, 0);
 	if (!tls)
 		return NULL;
 
