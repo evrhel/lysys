@@ -305,3 +305,218 @@ void *ls_tls_get(ls_handle tlsh)
 	return NULL;
 #endif // LS_WINDOWS
 }
+
+struct ls_fiber
+{
+	ls_thread_func_t func;
+	void *up;
+	int exit_code;
+
+#if LS_WINDOWS
+	LPVOID lpFiber;
+#else
+#endif // LS_WINDOWS
+};
+
+static LS_THREADLOCAL struct ls_fiber _main_fiber = { 0 };
+
+static void ls_fiber_dtor(struct ls_fiber *fiber)
+{
+#if LS_WINDOWS
+	DeleteFiber(fiber->lpFiber);
+#else
+#endif // LS_WINDOWS
+}
+
+static const struct ls_class FiberClass = {
+	.type = LS_FIBER,
+	.cb = sizeof(struct ls_fiber),
+	.dtor = (ls_dtor_t)&ls_fiber_dtor,
+	.wait = NULL
+};
+
+#if LS_WINDOWS
+
+static void CALLBACK ls_fiber_func(void *up)
+{
+	struct ls_fiber *fiber = up;
+	fiber->func(up);
+}
+
+#else
+#endif // LS_WINDOWS
+
+static inline struct ls_fiber *ls_resolve_fiber(ls_handle f)
+{
+#if LS_WINDOWS
+	struct ls_fiber *fiber;
+
+	if (!f)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	if (f == LS_SELF)
+	{
+		fiber = GetCurrentFiber();
+		if (!fiber)
+		{
+			ls_set_errno(LS_INVALID_HANDLE);
+			return NULL;
+		}
+
+		return fiber;
+	}
+
+	if (f == LS_MAIN)
+	{
+		if (_main_fiber.lpFiber)
+			return &_main_fiber;
+
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	return f;
+#else
+	ls_set_errno(LS_NOT_IMPLEMENTED);
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+int ls_convert_to_fiber(void *up)
+{
+#if LS_WINDOWS
+	if (_main_fiber.lpFiber)
+		return 0;
+
+	_main_fiber.lpFiber = ConvertThreadToFiber(NULL);
+	if (!_main_fiber.lpFiber)
+		return ls_set_errno_win32(GetLastError());
+
+	_main_fiber.func = NULL;
+	_main_fiber.up = up;
+
+	return 0;
+#else
+	ls_set_errno(LS_NOT_IMPLEMENTED);
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+int ls_convert_to_thread(void)
+{
+#if LS_WINDOWS
+	if (!_main_fiber.lpFiber)
+		return 0;
+
+	if (!ConvertFiberToThread())
+		return ls_set_errno_win32(GetLastError());
+
+	_main_fiber.lpFiber = NULL;
+	_main_fiber.up = NULL;
+
+	return 0;
+#else
+	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDOWS
+}
+
+ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	if (!func)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	if (!_main_fiber.lpFiber)
+	{
+		// current thread is not a fiber
+		ls_set_errno(LS_INVALID_STATE);
+		return NULL;
+	}
+
+	f = ls_handle_create(&FiberClass, 0);
+	if (!f)
+		return NULL;
+
+	f->lpFiber = CreateFiber(0, &ls_fiber_func, f);
+	if (!f->lpFiber)
+	{
+		ls_set_errno_win32(GetLastError());
+		ls_handle_dealloc(f);
+		return NULL;
+	}
+
+	f->func = func;
+	f->up = up;
+
+	return f;
+#else
+	// TODO: Implement
+	ls_set_errno(LS_NOT_IMPLEMENTED);
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+void ls_fiber_switch(ls_handle fiber)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	if (!_main_fiber.lpFiber)
+		return; // Current thread is not a fiber
+
+	f = ls_resolve_fiber(fiber);
+	if (f)
+		SwitchToFiber(f->lpFiber);
+#else
+	// TODO: Implement
+#endif // LS_WINDOWS
+}
+
+ls_handle ls_fiber_self(void)
+{
+#if LS_WINDOWS
+	return GetCurrentFiber() ? LS_SELF : NULL;
+#else
+	return NULL;
+#endif // LS_WINDOWS
+}
+
+void *ls_fiber_get_data(ls_handle fiber)
+{
+	struct ls_fiber *f;
+	f = ls_resolve_fiber(fiber);
+	return f ? f->up : NULL;
+}
+
+LS_NORETURN void ls_fiber_exit(int code)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	f = GetFiberData();
+
+	if (!f)
+		ExitThread(code); // Not a fiber
+
+	f->exit_code = code;
+
+	if (f == &_main_fiber)
+		ExitThread(code); // Main fiber
+
+	if (!_main_fiber.lpFiber)
+		ExitThread(code); // No fiber to switch to
+
+	SwitchToFiber(_main_fiber.lpFiber);
+#else
+	// TODO: Implement
+	pthread_exit(NULL);
+#endif // LS_WINDOWS
+}

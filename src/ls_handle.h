@@ -20,6 +20,7 @@
 #define LS_SNAPSHOT 12
 #define LS_AIO (13 | LS_WAITABLE)
 #define LS_PIPE (14 | LS_IO_STREAM)
+#define LS_FIBER 15
 
 // handle is statically allocated, will never have memory deallocated
 // or destructor called
@@ -31,6 +32,7 @@
 #define LS_PSUEDO_HANDLE_HIGH ((ls_handle)0x0000ffff)
 
 #define LS_SELF ((ls_handle)0x0000fffe)
+#define LS_MAIN ((ls_handle)0x0000fffd)
 
 #define LS_IS_PSUEDO_HANDLE(h) ((h) >= LS_PSUEDO_HANDLE_LOW && (h) <= LS_PSUEDO_HANDLE_HIGH)
 

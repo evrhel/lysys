@@ -85,12 +85,14 @@
 #define LS_LIKELY(x) (x)
 #define LS_UNLIKELY(x) (x)
 #define LS_UNREACHABLE __assume(0)
+#define LS_NORETURN __declspec(noreturn)
 #else
 #define LS_THREADLOCAL __thread
 #define LS_RESTRICT restrict
 #define LS_LIKELY(x) __builtin_expect(!!(x), 1)
 #define LS_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define LS_UNREACHABLE __builtin_unreachable()
+#define LS_NORETURN __attribute__((noreturn))
 #endif // LS_WINDOWS
 
 typedef void *ls_handle;
