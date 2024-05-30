@@ -480,6 +480,11 @@ void ls_fiber_switch(ls_handle fiber)
 #endif // LS_WINDOWS
 }
 
+void ls_fiber_sched(void)
+{
+	ls_fiber_switch(LS_MAIN);
+}
+
 ls_handle ls_fiber_self(void)
 {
 #if LS_WINDOWS

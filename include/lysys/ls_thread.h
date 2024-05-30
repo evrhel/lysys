@@ -111,6 +111,9 @@ ls_handle ls_fiber_create(ls_thread_func_t func, void *up);
 //! \param fiber The fiber to switch to.
 void ls_fiber_switch(ls_handle fiber);
 
+//! \brief Switch to the main fiber on the current thread.
+void ls_fiber_sched(void);
+
 //! \brief Retrieve the handle of the calling fiber.
 //! 
 //! The returned handle is a psuedo-handle to the calling fiber and
