@@ -337,10 +337,10 @@ static const struct ls_class FiberClass = {
 
 #if LS_WINDOWS
 
-static void CALLBACK ls_fiber_func(void *up)
+static void CALLBACK ls_fiber_entry_thunk(void *up)
 {
 	struct ls_fiber *fiber = up;
-	fiber->func(up);
+	fiber->func(fiber->up);
 }
 
 #else
@@ -445,7 +445,7 @@ ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
 	if (!f)
 		return NULL;
 
-	f->lpFiber = CreateFiber(0, &ls_fiber_func, f);
+	f->lpFiber = CreateFiber(0, &ls_fiber_entry_thunk, f);
 	if (!f->lpFiber)
 	{
 		ls_set_errno_win32(GetLastError());
