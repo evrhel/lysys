@@ -327,6 +327,160 @@ generic_error:
 	ls_set_errno(err);
 	return NULL;
 #else
+	struct ls_proc *ph;
+	int fd[2]; // pipe (read, write)
+	int rc;
+	int err;
+	ssize_t bytes_read;
+	struct ls_file *pf;
+	int flags;
+	char **envp = NULL;
+
+	if (!path || !argv)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	ph = ls_handle_create(&ProcClass, 0);
+	if (!ph)
+		return NULL;
+
+	rc = pipe(fd);
+	if (rc == -1)
+	{
+		ls_set_errno(ls_errno_to_error(errno));
+		ls_handle_dealloc(ph);
+		return NULL;
+	}
+
+	ph->pid = fork();
+	if (ph->pid == -1)
+	{
+		ls_set_errno(ls_errno_to_error(errno));
+		close(fd[0]);
+		close(fd[1]);
+		ls_handle_dealloc(ph);
+		return NULL;
+	}
+
+	if (ph->pid == 0)
+	{
+		// child
+
+		close(fd[0]); // close read end
+
+		// set close on exec flag for write end
+		rc = fcntl(fd[1], F_SETFD, FD_CLOEXEC);
+		if (rc == -1)
+		{
+			err = errno;
+			goto exec_error;
+		}
+
+		if (info)
+		{
+			if (info->cwd)
+			{
+				rc = chdir(info->cwd);
+				if (rc == -1)
+				{
+					err = errno;
+					goto exec_error;
+				}
+			}
+
+			if (info->envp)
+				envp = info->envp;
+
+			if (info->hstdin)
+			{
+				pf = ls_resolve_file(info->hstdin, &flags);
+				if (!pf)
+				{
+					err = _ls_errno;
+					goto exec_error;
+				}
+
+				rc = dup2(pf->fd, STDIN_FILENO);
+				if (rc == -1)
+				{
+					err = errno;
+					goto exec_error;
+				}
+			}
+
+			if (info->hstdout)
+			{
+				pf = ls_resolve_file(info->hstdout, &flags);
+				if (!pf)
+				{
+					err = _ls_errno;
+					goto exec_error;
+				}
+
+				rc = dup2(pf->fd, STDOUT_FILENO);
+				if (rc == -1)
+				{
+					err = errno;
+					goto exec_error;
+				}
+			}
+
+			if (info->hstderr)
+			{
+				pf = ls_resolve_file(info->hstderr, &flags);
+				if (!pf)
+				{
+					err = _ls_errno;
+					goto exec_error;
+				}
+
+				rc = dup2(pf->fd, STDERR_FILENO);
+				if (rc == -1)
+				{
+					err = errno;
+					goto exec_error;
+				}
+			}
+		}
+
+		execve(path, argv, envp);
+		err = errno;
+
+		// fall through
+	exec_error:
+		(void)write(fd[1], &err, sizeof(err));
+		fsync(fd[1]);
+		close(fd[1]);
+		_exit(1);
+	}
+
+	// parent
+
+	close(fd[1]); // close write end
+
+	bytes_read = read(fd[0], &err, sizeof(err));
+	if (bytes_read == -1)
+	{
+		// unknown error
+		ls_set_errno(ls_errno_to_error(errno));
+		close(fd[0]);
+		ls_handle_dealloc(ph);
+		return NULL;
+	}
+
+	if (bytes_read == 4)
+	{
+		// an error occurred in the parent
+		ls_set_errno(err);
+		waitpid(ph->pid, NULL, 0);
+		close(fd[0]);
+		ls_handle_dealloc(ph);
+		return NULL;
+	}
+	
+
 	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return NULL;
 #endif // LS_WINDOWS
