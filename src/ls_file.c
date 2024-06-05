@@ -131,15 +131,18 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 		return ls_set_errno_win32(GetLastError());
 	return liNewPointer.QuadPart;
 #else
-	int fd;
+	struct ls_file *pf;
 	off_t r;
 	int flags;
 
-	fd = ls_resolve_file(file, &flags);
-	if (fd == -1)
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
 		return -1;
 
-	r = lseek(fd, offset, origin);
+	if (pf->fd == -1)
+		return 0;
+
+	r = lseek(pf->fd, offset, origin);
 	if (r == -1)
 		return ls_set_errno(ls_errno_to_error((int)r));
 	return r;
@@ -185,19 +188,28 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 
 	return size - remaining;
 #else
-	int fd;
+	struct ls_file *pf;
 	size_t bytes_read;
 	size_t remaining;
 	int flags;
 
-	fd = ls_resolve_file(fh, &flags);
-	if (fd == -1)
+	pf = ls_resolve_file(fh, &flags);
+	if (!pf)
 		return -1;
+	
+	if (pf->fd == -1)
+		return 0;
+
+	if (flags & LS_FLAG_ASYNC)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (!(flags & LS_FILE_READ))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	remaining = size;
 	while (remaining != 0)
 	{
-		bytes_read = (size_t)read(fd, buffer, remaining);
+		bytes_read = (size_t)read(pf->fd, buffer, remaining);
 		if (bytes_read == -1)
 		{
 			if (errno == EAGAIN)
@@ -253,17 +265,28 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 
 	return size - remaining;
 #else
-	int fd;
+	struct ls_file *pf;
 	size_t bytes_written;
 	size_t remaining;
 	int flags;
 
-	fd = ls_resolve_file(fh, &flags);
+	pf = ls_resolve_file(fh, &flags);
+	if (!pf)
+		return -1;
+
+	if (pf->fd == -1)
+		return size;
+
+	if (flags & LS_FLAG_ASYNC)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (!(flags & LS_FILE_WRITE))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	remaining = size;
 	while (remaining != 0)
 	{
-		bytes_written = (size_t)write(fd, buffer, remaining);
+		bytes_written = (size_t)write(pf->fd, buffer, remaining);
 		if (bytes_written == -1)
 		{
 			if (errno == EAGAIN)
@@ -301,15 +324,21 @@ int ls_flush(ls_handle file)
 		return ls_set_errno_win32(GetLastError());
 	return 0;
 #else
-	int fd;
+	struct ls_file *pf;
 	int rc;
 	int flags;
 
-	fd = ls_resolve_file(file, &flags);
-	if (fd == -1)
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
 		return -1;
 
-	rc = fsync(fd);
+	if (pf->fd == -1)
+		return 0;
+
+	if (!(flags & LS_FILE_WRITE))
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	rc = fsync(pf->fd);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
 	return 0;
@@ -335,7 +364,8 @@ static void ls_aio_dtor(struct ls_aio *aio)
 {
 #if LS_WINDOWS
 #else
-	// TODO: implement
+	cond_destroy(&aio->cond);
+	lock_destroy(&aio->lock);
 #endif // LS_WINDOWS
 }
 
@@ -376,7 +406,7 @@ static int ls_aio_wait(struct ls_aio *aio, unsigned long ms)
 
 #if LS_POSIX
 
-static void la_aio_update_status(struct ls_aio *aio, int status)
+static void ls_aio_update_status(struct ls_aio *aio, int status)
 {
 	if (aio->status == status)
 		return;
@@ -800,11 +830,10 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 		if (aio->bytes_transferred == -1)
 		{
 			// no requests have been made yet
-			lock_unlock(&aio->lock);
-			return ls_set_errno(LS_NOT_READY);
+			*transferred = 0;
 		}
-
-		*transferred = aio->bytes_transferred;
+		else
+			*transferred = aio->bytes_transferred;
 	}
 	else if (status == LS_AIO_ERROR)
 	{
@@ -1142,6 +1171,7 @@ static void ls_pipe_dtor(ls_pipe_t *pp)
 	CloseHandle(pp->hPipe);
 #else
 	(void)close(pp->fd);
+	ls_free(pp->path);
 #endif // LS_WINDOWS
 }
 
@@ -1382,9 +1412,8 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 	rc = mkfifo(path, 0666);
 	if (rc == -1)
 	{
-		rc = ls_errno_to_error(errno);
+		ls_set_errno(ls_errno_to_error(errno));
 		ls_handle_dealloc(pp);
-		ls_set_errno(rc);
 		return NULL;
 	}
 
@@ -1393,9 +1422,8 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 		fd = open(path, O_RDWR | O_NONBLOCK);
 		if (fd == -1)
 		{
-			rc = ls_errno_to_error(errno);
+			ls_set_errno(ls_errno_to_error(errno));
 			ls_handle_dealloc(pp);
-			ls_set_errno(rc);
 			return NULL;
 		}
 
@@ -1407,9 +1435,8 @@ ls_handle ls_named_pipe(const char *name, int flags, int wait)
 		fd = open(path, O_RDWR);
 		if (fd == -1)
 		{
-			rc = ls_errno_to_error(errno);
+			ls_set_errno(ls_errno_to_error(errno));
 			ls_handle_dealloc(pp);
-			ls_set_errno(rc);
 			return NULL;
 		}
 
@@ -1567,7 +1594,8 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 	size_t cb;
 	int *pfd;
 	int fd;
-	int rc;
+	int is_async;
+	int flags;
 
 	if (!name)
 	{
@@ -1579,16 +1607,27 @@ ls_handle ls_pipe_open(const char *name, int access, unsigned long timeout)
 	if (cb == -1)
 		return NULL;
 
-	pfd = ls_handle_create(&FileClass);
+	is_async = !!(access & LS_FLAG_ASYNC);
+
+	pfd = ls_handle_create(&FileClass, access);
 	if (!pfd)
 		return NULL;
 
-	fd = open(path, O_RDWR, 0666);
+	flags = 0;
+	if (access & LS_FILE_READ)
+		flags |= O_RDONLY;
+
+	if (access & LS_FILE_WRITE)
+		flags |= O_WRONLY;
+
+	if (is_async)
+		flags |= O_NONBLOCK;
+
+	fd = open(path, flags);
 	if (fd == -1)
 	{
-		rc = ls_errno_to_error(errno);
+		ls_set_errno(ls_errno_to_error(errno));
 		ls_handle_dealloc(pfd);
-		ls_set_errno(rc);
 		return NULL;
 	}
 

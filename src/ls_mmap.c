@@ -102,11 +102,19 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	void *addr;
 	size_t max_size;
 	int prot;
-	int flags = 0;
-	int fd;
+	int flags;
+	struct ls_file *pf;
 	size_t *map_res;
 
-	fd = ls_resolve_file(file);
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
+		return NULL;
+
+	if (pf->fd == -1)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
 
 	if (!map)
 	{
@@ -114,7 +122,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 		return NULL;
 	}
 
-	rc = fstat(fd, &st);
+	rc = fstat(pf->fd, &st);
 	if (rc != 0)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
@@ -133,18 +141,19 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	else if (size > max_size)
 		return NULL;
 
-	map_res = ls_handle_create(&FileMappingClass);
+	map_res = ls_handle_create(&FileMappingClass, 0);
 	if (!map_res)
 		return NULL;
 
 	prot = ls_protect_to_flags(protect);
 
+	flags = 0;
 	if (protect & LS_PROT_WRITECOPY)
 		flags |= MAP_PRIVATE;
 	else
 		flags |= MAP_SHARED;
 
-	addr = mmap(NULL, size, protect, flags, fd, offset);
+	addr = mmap(NULL, size, protect, flags, pf->fd, offset);
 	if (!addr)
 	{
 		ls_set_errno(ls_errno_to_error(errno));

@@ -479,7 +479,7 @@ ls_handle ls_proc_open(unsigned long pid)
 	if (getpid() == pid)
 		return LS_SELF;
 
-	proc = ls_handle_create(&ProcClass);
+	proc = ls_handle_create(&ProcClass, 0);
 	if (!proc)
 		return NULL;
 
