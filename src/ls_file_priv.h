@@ -19,6 +19,7 @@ typedef struct ls_pipe
 	OVERLAPPED ov;
 #else
 	int fd;
+	char *path;
 #endif // LS_WINDOWS
 	int connected;
 } ls_pipe_t;

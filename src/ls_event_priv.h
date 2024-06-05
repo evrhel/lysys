@@ -2,6 +2,7 @@
 #define _LS_EVENT_PRIV_H_
 
 #include "ls_native.h"
+#include "ls_sync_util.h"
 
 struct ls_event
 {

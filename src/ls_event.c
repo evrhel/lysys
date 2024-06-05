@@ -19,12 +19,12 @@ static void ls_event_dtor(struct ls_event *ev)
 #endif // LS_WINDOWS
 }
 
-static int ls_event_wait(struct ls_event *evt, unsigned long ms)
+static int ls_event_wait(struct ls_event *ev, unsigned long ms)
 {
 #if LS_WINDOWS
     DWORD dwResult;
 
-    dwResult = WaitForSingleObject(evt->hEvent, ms);
+    dwResult = WaitForSingleObject(ev->hEvent, ms);
 
     if (dwResult == WAIT_OBJECT_0)
         return 0;
@@ -37,12 +37,12 @@ static int ls_event_wait(struct ls_event *evt, unsigned long ms)
     int rc;
     struct timespec ts;
 
-    lock_lock(&evt->lock);
+    lock_lock(&ev->lock);
 
-    while (!evt->signaled)
-        cond_wait(&evt->cond, &evt->lock, ms);
+    while (!ev->signaled)
+        cond_wait(&ev->cond, &ev->lock, ms);
 
-    lock_unlock(&evt->lock);
+    lock_unlock(&ev->lock);
 
     return rc;
 #endif // LS_WINDOWS
@@ -74,29 +74,29 @@ ls_handle ls_event_create(void)
 
     return ev;
 #else
-    struct event *evt;
+    struct ls_event *ev;
     int rc;
 
-    evt = ls_handle_create(&EventClass);
-    if (!evt)
+    ev = ls_handle_create(&EventClass, 0);
+    if (!ev)
         return NULL;
 
-    rc = lock_init(&evt->lock);
+    rc = lock_init(&ev->lock);
     if (rc != 0)
     {
-        ls_handle_dealloc(evt);
+        ls_handle_dealloc(ev);
         return NULL;
     }
 
-    rc = cond_init(&evt->cond);
+    rc = cond_init(&ev->cond);
     if (rc != 0)
     {
-        lock_destroy(&evt->lock);
-        ls_handle_dealloc(evt);
+        lock_destroy(&ev->lock);
+        ls_handle_dealloc(ev);
         return NULL;
     }
 
-    return evt;
+    return ev;
 #endif // LS_WINDOWS
 }
 
@@ -110,15 +110,15 @@ int ls_event_signaled(ls_handle evt)
 
     return WaitForSingleObject(ev->hEvent, 0) == WAIT_OBJECT_0;
 #else
-    struct event *event = evt;
+    struct ls_event *ev = evt;
     int rc;
 
-    if (!evt)
+    if (!ev)
         return ls_set_errno(LS_INVALID_HANDLE);
 
-    lock_lock(&event->lock);
-    rc = event->signaled;
-    lock_unlock(&event->lock);
+    lock_lock(&ev->lock);
+    rc = ev->signaled;
+    lock_unlock(&ev->lock);
 
     return rc;
 #endif // LS_WINDOWS
@@ -138,16 +138,16 @@ int ls_event_set(ls_handle evt)
         return ls_set_errno_win32(GetLastError());
     return 0;
 #else
-    struct event *event = evt;
+    struct ls_event *ev = evt;
     int rc;
 
-    if (!evt)
+    if (!ev)
         return ls_set_errno(LS_INVALID_HANDLE);
 
-    lock_lock(&event->lock);
-    event->signaled = 1;
-    cond_broadcast(&event->cond);
-    lock_unlock(&event->lock);
+    lock_lock(&ev->lock);
+    ev->signaled = 1;
+    cond_broadcast(&ev->cond);
+    lock_unlock(&ev->lock);
 
     return 0;
 #endif // LS_WINDOWS
@@ -167,15 +167,15 @@ int ls_event_reset(ls_handle evt)
         return ls_set_errno_win32(GetLastError());
     return 0;
 #else
-    struct event *event = evt;
+    struct ls_event *ev = evt;
     int rc;
 
-    if (!evt)
+    if (!ev)
         return ls_set_errno(LS_INVALID_HANDLE);
 
-    lock_lock(&event->lock);
-    event->signaled = 0;
-    lock_unlock(&event->lock);
+    lock_lock(&ev->lock);
+    ev->signaled = 0;
+    lock_unlock(&ev->lock);
 
     return 0;
 #endif // LS_WINDOWS

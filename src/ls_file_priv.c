@@ -15,35 +15,35 @@ ls_file_t *ls_resolve_file(ls_handle fh, int *flags)
 	case 0:
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
-	case LS_DEVNULL:
+	case (intptr_t)LS_DEVNULL:
 #if LS_WINDOWS
 		_file.hFile = NULL;
 #else
-		file.fd = -1;
+		_file.fd = -1;
 #endif // LS_WINDOWS
 		*flags = LS_FILE_READ | LS_FILE_WRITE;
 		break;
-	case LS_STDIN:
+	case (intptr_t)LS_STDIN:
 #if LS_WINDOWS
 		_file.hFile = GetStdHandle(STD_INPUT_HANDLE);
 #else
-		file.fd = 0;
+		_file.fd = 0;
 #endif // LS_WINDOWS
 		*flags = LS_FILE_READ;
 		break;
-	case LS_STDOUT:
+	case (intptr_t)LS_STDOUT:
 #if LS_WINDOWS
 		_file.hFile = GetStdHandle(STD_OUTPUT_HANDLE);
 #else
-		file.fd = 1;
+		_file.fd = 1;
 #endif // LS_WINDOWS
 		*flags = LS_FILE_WRITE;
 		break;
-	case LS_STDERR:
+	case (intptr_t)LS_STDERR:
 #if LS_WINDOWS
 		_file.hFile = GetStdHandle(STD_ERROR_HANDLE);
 #else
-		file.fd = 2;
+		_file.fd = 2;
 #endif // LS_WINDOWS
 		*flags = LS_FILE_WRITE;
 		break;
