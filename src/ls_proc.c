@@ -328,13 +328,21 @@ generic_error:
 	return NULL;
 #else
 	struct ls_proc *ph;
-	int fd[2]; // pipe (read, write)
+	int fd[2] = { 0, 0 }; // pipe (read, write)
 	int rc;
 	int err;
 	ssize_t bytes_read;
 	struct ls_file *pf;
 	int flags;
+
+	char **argv2 = NULL;
+	size_t argv_len = 0;
+
 	char **envp = NULL;
+	size_t env_len = 0;
+	int stdin_fd = STDIN_FILENO, stdout_fd = STDOUT_FILENO, stderr_fd = STDERR_FILENO;
+	const char *cwd = NULL;
+	ssize_t i;
 
 	if (!path || !argv)
 	{
@@ -346,22 +354,93 @@ generic_error:
 	if (!ph)
 		return NULL;
 
+	if (argv)
+	{
+		argv_len = salen(argv);
+		argv2 = ls_calloc((argv_len + 1), sizeof(char *));
+		if (!argv2)
+			goto create_error;
+
+		for (i = 0; i < argv_len; i++)
+		{
+			argv2[i] = ls_strdup(argv[i]);
+			if (!argv2[i])
+				goto create_error;
+		}
+	}
+
+	if (info)
+	{
+		if (info->cwd)
+			cwd = info->cwd;
+
+		if (envp)
+		{
+			env_len = salen(info->envp);
+			if (env_len > 0)
+			{
+				envp = ls_calloc((env_len + 1), sizeof(char *));
+				if (!envp)
+					goto create_error;
+
+				for (i = 0; i < env_len; i++)
+				{
+					envp[i] = ls_strdup(info->envp[i]);
+					if (!envp[i])
+						goto create_error;
+				}
+			}
+		}
+
+		if (info->hstdin)
+		{
+			pf = ls_resolve_file(info->hstdin, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stdin_fd = pf->fd;
+		}
+
+		if (info->hstdout)
+		{
+			pf = ls_resolve_file(info->hstdout, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stdout_fd = pf->fd;
+		}
+
+		if (info->hstderr)
+		{
+			pf = ls_resolve_file(info->hstderr, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stderr_fd = pf->fd;
+		}
+	}
+
 	rc = pipe(fd);
 	if (rc == -1)
 	{
-		ls_set_errno(ls_errno_to_error(errno));
-		ls_handle_dealloc(ph);
-		return NULL;
+		err = ls_errno_to_error(errno);
+		goto create_error;
 	}
 
 	ph->pid = fork();
 	if (ph->pid == -1)
 	{
-		ls_set_errno(ls_errno_to_error(errno));
-		close(fd[0]);
-		close(fd[1]);
-		ls_handle_dealloc(ph);
-		return NULL;
+		err = ls_errno_to_error(errno);
+		goto create_error;
 	}
 
 	if (ph->pid == 0)
@@ -374,79 +453,56 @@ generic_error:
 		rc = fcntl(fd[1], F_SETFD, FD_CLOEXEC);
 		if (rc == -1)
 		{
-			err = errno;
+			err = ls_errno_to_error(errno);
 			goto exec_error;
 		}
 
-		if (info)
+		if (cwd)
 		{
-			if (info->cwd)
+			// change working directory
+			rc = chdir(cwd);
+			if (rc == -1)
 			{
-				rc = chdir(info->cwd);
-				if (rc == -1)
-				{
-					err = errno;
-					goto exec_error;
-				}
-			}
-
-			if (info->envp)
-				envp = info->envp;
-
-			if (info->hstdin)
-			{
-				pf = ls_resolve_file(info->hstdin, &flags);
-				if (!pf)
-				{
-					err = _ls_errno;
-					goto exec_error;
-				}
-
-				rc = dup2(pf->fd, STDIN_FILENO);
-				if (rc == -1)
-				{
-					err = errno;
-					goto exec_error;
-				}
-			}
-
-			if (info->hstdout)
-			{
-				pf = ls_resolve_file(info->hstdout, &flags);
-				if (!pf)
-				{
-					err = _ls_errno;
-					goto exec_error;
-				}
-
-				rc = dup2(pf->fd, STDOUT_FILENO);
-				if (rc == -1)
-				{
-					err = errno;
-					goto exec_error;
-				}
-			}
-
-			if (info->hstderr)
-			{
-				pf = ls_resolve_file(info->hstderr, &flags);
-				if (!pf)
-				{
-					err = _ls_errno;
-					goto exec_error;
-				}
-
-				rc = dup2(pf->fd, STDERR_FILENO);
-				if (rc == -1)
-				{
-					err = errno;
-					goto exec_error;
-				}
+				err = ls_errno_to_error(errno);
+				goto exec_error;
 			}
 		}
 
-		execve(path, argv, envp);
-		err = errno;
+		if (stdin_fd)
+		{
+			// redirect stdin
+			rc = dup2(stdin_fd, STDIN_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		if (stdout_fd)
+		{
+			// redirect stdout
+			rc = dup2(stdout_fd, STDOUT_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		if (stderr_fd)
+		{
+			// redirect stderr
+			rc = dup2(stderr_fd, STDERR_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		execve(path, argv2, envp);
+		err = ls_errno_to_error(errno);
 
 		// fall through
 	exec_error:
@@ -457,31 +513,51 @@ generic_error:
 	}
 
 	// parent
+	
+	for (i = 0; i < env_len; i++)
+		ls_free(envp[i]);
+	ls_free(envp);
+	envp = NULL, env_len = 0;
 
-	close(fd[1]); // close write end
+	for (i = 0; i < argv_len; i++)
+		ls_free(argv2[i]);
+	ls_free(argv2);
+	argv2 = NULL, argv_len = 0;
+
+	close(fd[1]), fd[1] = 0; // close write end
 
 	bytes_read = read(fd[0], &err, sizeof(err));
 	if (bytes_read == -1)
 	{
 		// unknown error
-		ls_set_errno(ls_errno_to_error(errno));
-		close(fd[0]);
-		ls_handle_dealloc(ph);
-		return NULL;
+		err = ls_errno_to_error(errno);
+		goto create_error;
 	}
 
 	if (bytes_read == 4)
 	{
 		// an error occurred in the parent
-		ls_set_errno(err);
 		waitpid(ph->pid, NULL, 0);
-		close(fd[0]);
-		ls_handle_dealloc(ph);
-		return NULL;
+		goto create_error;
 	}
-	
 
-	ls_set_errno(LS_NOT_IMPLEMENTED);
+	return ph;
+create_error:
+	for (i = 0; i < env_len; i++)
+		ls_free(envp[i]);
+	ls_free(envp);
+
+	for (i = 0; i < argv_len; i++)
+		ls_free(argv2[i]);
+	ls_free(argv2);
+
+	if (fd[0])
+		close(fd[0]);
+
+	if (fd[1])
+		close(fd[1]);
+
+	ls_handle_dealloc(ph);
 	return NULL;
 #endif // LS_WINDOWS
 }
@@ -744,8 +820,27 @@ int ls_proc_state(ls_handle ph)
 		return LS_PROC_TERMINATED;
 
 	return ls_set_errno_win32(GetLastError());
-#else    
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#else
+	struct ls_proc *proc = ph;
+	int rc;
+
+	if (!ph)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if (proc->status != LS_PROC_RUNNING)
+		return proc->status;
+
+	rc = kill(proc->pid, 0);
+	if (rc == 0)
+		return LS_PROC_RUNNING;
+
+	if (errno == ESRCH)
+	{
+		proc->status = LS_PROC_TERMINATED;
+		return LS_PROC_TERMINATED;
+	}
+
+	return ls_set_errno(ls_errno_to_error(errno));
 #endif // LS_WINDOWS
 }
 
