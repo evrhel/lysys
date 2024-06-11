@@ -1,6 +1,8 @@
 #include "ls_native.h"
 
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <lysys/ls_thread.h>
 #include <lysys/ls_core.h>
