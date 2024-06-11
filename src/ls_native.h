@@ -71,6 +71,7 @@ int win32_to_error(DWORD err);
 #include <wordexp.h>
 #include <aio.h>
 #include <signal.h>
+#include <ucontext.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>

@@ -56,6 +56,8 @@ if (WIN32)
 elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
     target_link_libraries(liblysys PUBLIC ${COCOA_LIBRARY})
+    add_definitions(-D_XOPEN_SOURCE=500) # for ucontext.h
+    add_definitions(-D_DARWIN_C_SOURCE) # _XOPEN_SOURCE excludes some functions/types
 elseif(UNIX)
     target_link_libraries(liblysys PRIVATE xcb)
 endif()
