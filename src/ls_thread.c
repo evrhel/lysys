@@ -610,9 +610,6 @@ void ls_fiber_switch(ls_handle fiber)
 		return; // Current thread is not a fiber
 
 	f = ls_resolve_fiber(fiber);
-	if (f == _current_fiber)
-		return; // Already on this fiber
-
 	if (f)
 		SwitchToFiber(f->lpFiber);
 #else
