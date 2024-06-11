@@ -130,7 +130,7 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 	uint64_t id;
 #endif // LS_DARWIN
 
-	th = ls_handle_create(&ThreadClass);
+	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
 		return NULL;
 
@@ -400,8 +400,7 @@ int ls_convert_to_fiber(void *up)
 
 	return 0;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDOWS
 }
 

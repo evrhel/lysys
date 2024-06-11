@@ -146,14 +146,15 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	return 0;
 #else
 	struct stat pst;
+	struct ls_file *pf;
+	int flags;
 	int rc;
-	int fd;
 
-	fd = ls_resolve_file(file);
-	if (fd == -1)
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
 		return -1;
 
-	rc = fstat(fd, &pst);
+	rc = fstat(pf->fd, &pst);
 	if (rc == -1)
 		return ls_set_errno(ls_errno_to_error(errno));
 
@@ -305,7 +306,7 @@ ls_handle ls_opendir(const char *path)
 		return NULL;
 	}
 
-	data = ls_handle_create(&DirClass);
+	data = ls_handle_create(&DirClass, 0);
 	if (!data)
 		return NULL;
 

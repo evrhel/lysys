@@ -766,7 +766,7 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 	CFArrayRef paths;
 	Boolean b;
 	
-	w = ls_handle_create(&WatchClass);
+	w = ls_handle_create(&WatchClass, 0);
 	if (!w)
 		return NULL;
 	
