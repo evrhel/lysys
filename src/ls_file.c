@@ -244,7 +244,7 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	if (flags & LS_FLAG_ASYNC)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	if (!(flags & LS_FILE_READ))
+	if (!(flags & LS_FILE_WRITE))
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	dwToWrite = (DWORD)(size & 0xffffffff);
