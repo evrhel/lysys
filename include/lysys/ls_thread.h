@@ -68,4 +68,76 @@ int ls_tls_set(ls_handle tlsh, void *value);
 //! occurred. Note that NULL is also a valid value.
 void *ls_tls_get(ls_handle tlsh);
 
+//! \brief Convert the calling thread to a fiber.
+//! 
+//! Converts the calling thread to a fiber. The thread can now be
+//! used to create fibers and switch between them.
+//! 
+//! \param up User data to associate with the fiber. This data can be
+//! retrieved with ls_fiber_get_data().
+//! 
+//! \return 0 if successful, or -1 if an error occurred.
+int ls_convert_to_fiber(void *up);
+
+//! \brief Convert the calling fiber to a thread.
+//! 
+//! Converts the calling fiber to a thread. The thread cannot do
+//! any operations that are specific to fibers, including closing
+//! the handle. Close handles before converting to a thread.
+//! 
+//! \return 0 if successful, or -1 if an error occurred.
+int ls_convert_to_thread(void);
+
+//! \brief Create a new fiber.
+//! 
+//! Fibers may only be created by a fiber. Use ls_convert_to_fiber() to
+//! convert the calling thread to a fiber.
+//! 
+//! If a fiber was not created with ls_convert_to_fiber() or
+//! ls_fiber_create(), use of the fiber functions within that fiber
+//! will result in undefined behavior.
+//! 
+//! \param func The function to run in the new fiber.
+//! \param up User data to pass to the fiber function.
+//! 
+//! \return A handle to the new fiber, or NULL if an error occurred.
+ls_handle ls_fiber_create(ls_thread_func_t func, void *up);
+
+//! \brief Switch to the specified fiber.
+//! 
+//! Do not switch to a already running fiber. If the current thread
+//! is not a fiber, the function returns immediately.
+//! 
+//! \param fiber The fiber to switch to.
+void ls_fiber_switch(ls_handle fiber);
+
+//! \brief Switch to the main fiber on the current thread.
+void ls_fiber_sched(void);
+
+//! \brief Retrieve the handle of the calling fiber.
+//! 
+//! The returned handle is a psuedo-handle to the calling fiber and
+//! will always refer to the calling fiber, regardless of the thread
+//! or fiber that receives the handle.
+//! 
+//! \return A handle to the calling fiber.
+ls_handle ls_fiber_self(void);
+
+//! \brief Get the user data associated with a fiber.
+//! 
+//! \param fiber The fiber handle.
+//! 
+//! \return The user data associated with the fiber. If the current
+//! thread is not a fiber, the function returns NULL and sets ls_errno.
+void *ls_fiber_get_data(ls_handle fiber);
+
+//! \brief Exits the current fiber.
+//! 
+//! If the caller is a fiber, the thread that created the fiber will be
+//! scheduled. If the caller is a thread or is the creator of the fiber,
+//! the thread will exit. Regardless, the call will not return.
+//! 
+//! \param code The exit code.
+LS_NORETURN void ls_fiber_exit(int code);
+
 #endif // _LS_THREAD_H_

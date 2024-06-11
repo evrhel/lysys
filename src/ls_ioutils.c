@@ -7,8 +7,14 @@
 
 #include <lysys/ls_file.h>
 #include <lysys/ls_core.h>
+#include <lysys/ls_thread.h>
+#include <lysys/ls_event.h>
 
 #include "ls_native.h"
+#include "ls_file_priv.h"
+#include "ls_buffer.h"
+#include "ls_handle.h"
+#include "ls_sync_util.h"
 
 #define BUFFER_SIZE 1024
 

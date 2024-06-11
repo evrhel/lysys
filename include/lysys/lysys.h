@@ -12,6 +12,7 @@
 #include "ls_memory.h"
 #include "ls_mmap.h"
 #include "ls_proc.h"
+#include "ls_random.h"
 #include "ls_shell.h"
 #include "ls_stat.h"
 #include "ls_string.h"

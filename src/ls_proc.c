@@ -9,6 +9,7 @@
 #include "ls_handle.h"
 #include "ls_buffer.h"
 #include "ls_util.h"
+#include "ls_file_priv.h"
 
 #include <stdlib.h>
 #include <memory.h>
@@ -206,6 +207,8 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 	DWORD dwErr;
 	DWORD dwFlags = 0;
 	int err;
+	ls_file_t *pf;
+	int flags;
 
 	lpCmd = ls_build_command_line(path, argv);
 	if (!lpCmd)
@@ -228,7 +231,7 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 		}
 	}
 
-	ph = ls_handle_create(&ProcClass);
+	ph = ls_handle_create(&ProcClass, 0);
 	if (!ph)
 		goto generic_error;
 
@@ -240,21 +243,51 @@ ls_handle ls_proc_start(const char *path, const char *argv[], const struct ls_pr
 		{
 			if (info->hstdin && info->hstdin != LS_STDIN)
 			{
-				ph->si.hStdInput = ls_resolve_file(info->hstdin);
+				pf = ls_resolve_file(info->hstdin, &flags);
+				if (!pf)
+					goto generic_error;
+
+				if (flags & LS_FLAG_ASYNC)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdInput = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdInput, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}
 
 			if (info->hstdout && info->hstdout != LS_STDOUT)
 			{
-				ph->si.hStdOutput = ls_resolve_file(info->hstdout);
+				pf = ls_resolve_file(info->hstdin, &flags);
+				if (!pf)
+					goto generic_error;
+
+				if (flags & LS_FLAG_ASYNC)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdOutput = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdOutput, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}
 
 			if (info->hstderr && info->hstderr != LS_STDERR)
 			{
-				ph->si.hStdError = ls_resolve_file(info->hstderr);
+				pf = ls_resolve_file(info->hstdin, &flags);
+				if (!pf)
+					goto generic_error;
+
+				if (flags & LS_FLAG_ASYNC)
+				{
+					ls_set_errno(LS_INVALID_HANDLE);
+					goto generic_error;
+				}
+
+				ph->si.hStdError = pf->hFile;
 				if (!SetHandleInformation(ph->si.hStdError, HANDLE_FLAG_INHERIT, 1))
 					goto generic_error;
 			}
@@ -294,7 +327,237 @@ generic_error:
 	ls_set_errno(err);
 	return NULL;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
+	struct ls_proc *ph;
+	int fd[2] = { 0, 0 }; // pipe (read, write)
+	int rc;
+	int err;
+	ssize_t bytes_read;
+	struct ls_file *pf;
+	int flags;
+
+	char **argv2 = NULL;
+	size_t argv_len = 0;
+
+	char **envp = NULL;
+	size_t env_len = 0;
+	int stdin_fd = STDIN_FILENO, stdout_fd = STDOUT_FILENO, stderr_fd = STDERR_FILENO;
+	const char *cwd = NULL;
+	ssize_t i;
+
+	if (!path || !argv)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	ph = ls_handle_create(&ProcClass, 0);
+	if (!ph)
+		return NULL;
+
+	if (argv)
+	{
+		argv_len = salen(argv);
+		argv2 = ls_calloc((argv_len + 1), sizeof(char *));
+		if (!argv2)
+			goto create_error;
+
+		for (i = 0; i < argv_len; i++)
+		{
+			argv2[i] = ls_strdup(argv[i]);
+			if (!argv2[i])
+				goto create_error;
+		}
+	}
+
+	if (info)
+	{
+		if (info->cwd)
+			cwd = info->cwd;
+
+		if (envp)
+		{
+			env_len = salen(info->envp);
+			if (env_len > 0)
+			{
+				envp = ls_calloc((env_len + 1), sizeof(char *));
+				if (!envp)
+					goto create_error;
+
+				for (i = 0; i < env_len; i++)
+				{
+					envp[i] = ls_strdup(info->envp[i]);
+					if (!envp[i])
+						goto create_error;
+				}
+			}
+		}
+
+		if (info->hstdin)
+		{
+			pf = ls_resolve_file(info->hstdin, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stdin_fd = pf->fd;
+		}
+
+		if (info->hstdout)
+		{
+			pf = ls_resolve_file(info->hstdout, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stdout_fd = pf->fd;
+		}
+
+		if (info->hstderr)
+		{
+			pf = ls_resolve_file(info->hstderr, &flags);
+			if (!pf)
+			{
+				err = _ls_errno;
+				goto create_error;
+			}
+
+			stderr_fd = pf->fd;
+		}
+	}
+
+	rc = pipe(fd);
+	if (rc == -1)
+	{
+		err = ls_errno_to_error(errno);
+		goto create_error;
+	}
+
+	ph->pid = fork();
+	if (ph->pid == -1)
+	{
+		err = ls_errno_to_error(errno);
+		goto create_error;
+	}
+
+	if (ph->pid == 0)
+	{
+		// child
+
+		close(fd[0]); // close read end
+
+		// set close on exec flag for write end
+		rc = fcntl(fd[1], F_SETFD, FD_CLOEXEC);
+		if (rc == -1)
+		{
+			err = ls_errno_to_error(errno);
+			goto exec_error;
+		}
+
+		if (cwd)
+		{
+			// change working directory
+			rc = chdir(cwd);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		if (stdin_fd)
+		{
+			// redirect stdin
+			rc = dup2(stdin_fd, STDIN_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		if (stdout_fd)
+		{
+			// redirect stdout
+			rc = dup2(stdout_fd, STDOUT_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		if (stderr_fd)
+		{
+			// redirect stderr
+			rc = dup2(stderr_fd, STDERR_FILENO);
+			if (rc == -1)
+			{
+				err = ls_errno_to_error(errno);
+				goto exec_error;
+			}
+		}
+
+		execve(path, argv2, envp);
+		err = ls_errno_to_error(errno);
+
+		// fall through
+	exec_error:
+		(void)write(fd[1], &err, sizeof(err));
+		fsync(fd[1]);
+		close(fd[1]);
+		_exit(1);
+	}
+
+	// parent
+	
+	for (i = 0; i < env_len; i++)
+		ls_free(envp[i]);
+	ls_free(envp);
+	envp = NULL, env_len = 0;
+
+	for (i = 0; i < argv_len; i++)
+		ls_free(argv2[i]);
+	ls_free(argv2);
+	argv2 = NULL, argv_len = 0;
+
+	close(fd[1]), fd[1] = 0; // close write end
+
+	bytes_read = read(fd[0], &err, sizeof(err));
+	if (bytes_read == -1)
+	{
+		// unknown error
+		err = ls_errno_to_error(errno);
+		goto create_error;
+	}
+
+	if (bytes_read == 4)
+	{
+		// an error occurred in the parent
+		waitpid(ph->pid, NULL, 0);
+		goto create_error;
+	}
+
+	return ph;
+create_error:
+	for (i = 0; i < env_len; i++)
+		ls_free(envp[i]);
+	ls_free(envp);
+
+	for (i = 0; i < argv_len; i++)
+		ls_free(argv2[i]);
+	ls_free(argv2);
+
+	if (fd[0])
+		close(fd[0]);
+
+	if (fd[1])
+		close(fd[1]);
+
+	ls_handle_dealloc(ph);
 	return NULL;
 #endif // LS_WINDOWS
 }
@@ -422,7 +685,7 @@ ls_handle ls_proc_open(unsigned long pid)
 		return NULL;
 	}
 
-	ph = ls_handle_create(&ProcClass);
+	ph = ls_handle_create(&ProcClass, 0);
 	if (!ph)
 	{
 		CloseHandle(hProcess);
@@ -446,7 +709,7 @@ ls_handle ls_proc_open(unsigned long pid)
 	if (getpid() == pid)
 		return LS_SELF;
 
-	proc = ls_handle_create(&ProcClass);
+	proc = ls_handle_create(&ProcClass, 0);
 	if (!proc)
 		return NULL;
 
@@ -557,8 +820,27 @@ int ls_proc_state(ls_handle ph)
 		return LS_PROC_TERMINATED;
 
 	return ls_set_errno_win32(GetLastError());
-#else    
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#else
+	struct ls_proc *proc = ph;
+	int rc;
+
+	if (!ph)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if (proc->status != LS_PROC_RUNNING)
+		return proc->status;
+
+	rc = kill(proc->pid, 0);
+	if (rc == 0)
+		return LS_PROC_RUNNING;
+
+	if (errno == ESRCH)
+	{
+		proc->status = LS_PROC_TERMINATED;
+		return LS_PROC_TERMINATED;
+	}
+
+	return ls_set_errno(ls_errno_to_error(errno));
 #endif // LS_WINDOWS
 }
 

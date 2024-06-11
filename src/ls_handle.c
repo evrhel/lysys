@@ -7,7 +7,7 @@
 
 #include "ls_native.h"
 
-ls_handle ls_handle_create(const struct ls_class *clazz)
+ls_handle ls_handle_create(const struct ls_class *clazz, int flags)
 {
 	struct ls_handle_info *hi;
 	
@@ -16,8 +16,7 @@ ls_handle ls_handle_create(const struct ls_class *clazz)
 		return NULL;
 
 	hi->clazz = clazz;
-	hi->flags = 0;
-	hi->refcount = 1;
+	hi->flags = flags;
 
 	return LS_HANDLE_DATA(hi);
 }

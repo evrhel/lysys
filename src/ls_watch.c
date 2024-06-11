@@ -347,7 +347,7 @@ static DWORD CALLBACK ls_watch_worker(LPVOID lpParam)
 		}
 
 		// alertable wait for I/O completion
-		dwResult = WaitForSingleObjectEx(w->ov.hEvent, INFINITE, TRUE);	
+		dwResult = WaitForSingleObjectEx(w->ov.hEvent, INFINITE, TRUE);
 		dwErr = GetLastError();
 
 		lock_lock(&w->lock);
@@ -710,7 +710,7 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 	WCHAR szPath[MAX_PATH];
 	DWORD dwErr;
 
-	w = ls_handle_create(&WatchClass);
+	w = ls_handle_create(&WatchClass, 0);
 	if (!w)
 		return NULL;
 
@@ -766,7 +766,7 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 	CFArrayRef paths;
 	Boolean b;
 	
-	w = ls_handle_create(&WatchClass);
+	w = ls_handle_create(&WatchClass, 0);
 	if (!w)
 		return NULL;
 	
@@ -863,7 +863,7 @@ ls_handle ls_watch_dir(const char *dir, int flags)
 	struct ls_watch *w;
 	int rc;
 
-	w = ls_handle_create(&WatchClass);
+	w = ls_handle_create(&WatchClass, 0);
 	if (!w)
 		return NULL;
 

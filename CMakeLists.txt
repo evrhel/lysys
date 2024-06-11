@@ -10,6 +10,7 @@ set(LYSYS_SOURCES
     ${src}/ls_core.c
     ${src}/ls_event.c
     ${src}/ls_file.c
+    ${src}/ls_file_priv.c
     ${src}/ls_font.c
     ${src}/ls_ioutils.c
     ${src}/ls_handle.c
@@ -55,6 +56,8 @@ if (WIN32)
 elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
     target_link_libraries(liblysys PUBLIC ${COCOA_LIBRARY})
+    add_definitions(-D_XOPEN_SOURCE=500) # for ucontext.h
+    add_definitions(-D_DARWIN_C_SOURCE) # _XOPEN_SOURCE excludes some functions/types
 elseif(UNIX)
     target_link_libraries(liblysys PRIVATE xcb)
 endif()

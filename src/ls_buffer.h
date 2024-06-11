@@ -11,6 +11,8 @@ typedef struct ls_buffer
 	uint8_t *end;
 } ls_buffer_t;
 
+#define ls_buffer_size(b) ((b)->end - (b)->data)
+
 void ls_buffer_release(ls_buffer_t *buffer);
 
 void ls_buffer_clear(ls_buffer_t *buffer);

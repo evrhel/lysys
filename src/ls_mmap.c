@@ -2,11 +2,13 @@
 
 #include <lysys/ls_core.h>
 #include <lysys/ls_memory.h>
+#include <lysys/ls_file.h>
 
 #include <stdlib.h>
 
 #include "ls_handle.h"
 #include "ls_native.h"
+#include "ls_file_priv.h"
 
 static void ls_mmap_dtor(void *map)
 {
@@ -29,13 +31,14 @@ static const struct ls_class FileMappingClass = {
 void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle *map)
 {
 #if LS_WINDOWS
-	HANDLE hFile;
+	ls_file_t *pf;
 	HANDLE hMap;
 	handle_t handle;
 	LARGE_INTEGER liSize;
 	LARGE_INTEGER liOffset = { .QuadPart = offset };
 	LPVOID lpView;
 	DWORD dwAccess = 0;
+	int flags;
 
 	if (protect & (LS_PROT_READ | LS_PROT_WRITE | LS_PROT_WRITECOPY))
 		dwAccess = FILE_MAP_WRITE;
@@ -50,17 +53,23 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 
 	if (protect & LS_PROT_WRITECOPY)
 		dwAccess |= FILE_MAP_COPY;
-	
+
 	if (size == 0)
 		liSize.QuadPart = 0;
 	else
 		liSize.QuadPart = size + offset;
 
-	hFile = ls_resolve_file(file);
-	if (!hFile)
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
 		return NULL;
 
-	hMap = CreateFileMappingW(hFile, NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
+	if (flags & LS_FLAG_ASYNC)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	hMap = CreateFileMappingW(pf->hFile, NULL, ls_protect_to_flags(protect), liSize.HighPart, liSize.LowPart, NULL);
 	if (!hMap)
 	{
 		ls_set_errno_win32(GetLastError());
@@ -75,7 +84,7 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 		return NULL;
 	}
 
-	handle = ls_handle_create(&FileMappingClass);
+	handle = ls_handle_create(&FileMappingClass, 0);
 	if (!handle)
 	{
 		UnmapViewOfFile(lpView);
@@ -93,58 +102,67 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	void *addr;
 	size_t max_size;
 	int prot;
-	int flags = 0;
-	int fd;
+	int flags;
+	struct ls_file *pf;
 	size_t *map_res;
 
-	fd = ls_resolve_file(file);
-	
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
+		return NULL;
+
+	if (pf->fd == -1)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
 	if (!map)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
-	
-	rc = fstat(fd, &st);
+
+	rc = fstat(pf->fd, &st);
 	if (rc != 0)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
 		return NULL;
 	}
-	
+
 	if (offset > st.st_size)
 	{
 		ls_set_errno(LS_OUT_OF_RANGE);
 		return NULL;
 	}
-	
+
 	max_size = st.st_size - offset;
 	if (size == 0)
 		size = max_size;
 	else if (size > max_size)
 		return NULL;
-	
-	map_res = ls_handle_create(&FileMappingClass);
+
+	map_res = ls_handle_create(&FileMappingClass, 0);
 	if (!map_res)
 		return NULL;
-	
+
 	prot = ls_protect_to_flags(protect);
-	
+
+	flags = 0;
 	if (protect & LS_PROT_WRITECOPY)
 		flags |= MAP_PRIVATE;
 	else
 		flags |= MAP_SHARED;
-	
-	addr = mmap(NULL, size, protect, flags, fd, offset);
+
+	addr = mmap(NULL, size, protect, flags, pf->fd, offset);
 	if (!addr)
 	{
 		ls_set_errno(ls_errno_to_error(errno));
 		ls_handle_dealloc(map_res);
 		return NULL;
 	}
-	
+
 	*map_res = size;
-	
+
 	return addr;
 #endif // LS_WINDOWS
 }

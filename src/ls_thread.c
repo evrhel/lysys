@@ -1,6 +1,8 @@
 #include "ls_native.h"
 
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <lysys/ls_thread.h>
 #include <lysys/ls_core.h>
@@ -107,7 +109,7 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 #if LS_WINDOWS
 	struct ls_thread *th;
 
-	th = ls_handle_create(&ThreadClass);
+	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
 		return NULL;
 
@@ -130,7 +132,7 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 	uint64_t id;
 #endif // LS_DARWIN
 
-	th = ls_handle_create(&ThreadClass);
+	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
 		return NULL;
 
@@ -242,7 +244,7 @@ ls_handle ls_tls_create(void)
 #if LS_WINDOWS
 	struct ls_tls *tls;
 
-	tls = ls_handle_create(&TlsClass);
+	tls = ls_handle_create(&TlsClass, 0);
 	if (!tls)
 		return NULL;
 
@@ -303,5 +305,396 @@ void *ls_tls_get(ls_handle tlsh)
 	// TODO: Implement
 	ls_set_errno(LS_NOT_IMPLEMENTED);
 	return NULL;
+#endif // LS_WINDOWS
+}
+
+struct ls_fiber
+{
+	ls_thread_func_t func;
+	void *up;
+	int exit_code;
+
+#if LS_WINDOWS
+	LPVOID lpFiber;
+#else
+	ucontext_t ctx;
+#endif // LS_WINDOWS
+};
+
+static LS_THREADLOCAL struct ls_fiber _main_fiber = { 0 };
+
+#if LS_POSIX
+static LS_THREADLOCAL struct ls_fiber *_current_fiber = NULL;
+#endif // LS_POSIX
+
+static void ls_fiber_dtor(struct ls_fiber *fiber)
+{
+#if LS_WINDOWS
+	DeleteFiber(fiber->lpFiber);
+#else
+	if (fiber == &_main_fiber || fiber == _current_fiber)
+		abort(); // Cannot delete main fiber or current fiber
+
+	free(fiber->ctx.uc_stack.ss_sp);
+#endif // LS_WINDOWS
+}
+
+static const struct ls_class FiberClass = {
+	.type = LS_FIBER,
+	.cb = sizeof(struct ls_fiber),
+	.dtor = (ls_dtor_t)&ls_fiber_dtor,
+	.wait = NULL
+};
+
+#if LS_WINDOWS
+
+static void CALLBACK ls_fiber_entry_thunk(void *up)
+{
+	struct ls_fiber *fiber = up;
+	fiber->exit_code = fiber->func(fiber->up);
+}
+
+#else
+
+static void *ls_create_pointer(int lo, int hi)
+{
+#if __SIZEOF_SIZE_T__ == 4
+	return (void *)lo;
+#else
+	return (void *)(((uint64_t)hi << 32) | (uint64_t)lo);
+#endif // __SIZEOF_SIZE_T__
+}
+
+static void ls_split_pointer(void *ptr, int *lo, int *hi)
+{
+#if __SIZEOF_SIZE_T__ == 4
+	*lo = (int)ptr;
+	*hi = 0;
+#else
+	*lo = (int)((uint64_t)ptr & 0xffffffff);
+	*hi = (int)((uint64_t)ptr >> 32);
+#endif // __SIZEOF_SIZE_T__
+}
+
+static void ls_fiber_entry_thunk(int lo, int hi)
+{
+	struct ls_fiber *fiber = ls_create_pointer(lo, hi);
+	fiber->exit_code = fiber->func(fiber->up);
+}
+
+#endif // LS_WINDOWS
+
+static inline struct ls_fiber *ls_resolve_fiber(ls_handle f)
+{
+#if LS_WINDOWS
+	struct ls_fiber *fiber;
+
+	if (!f)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	if (f == LS_SELF)
+	{
+		fiber = GetCurrentFiber();
+		if (!fiber)
+		{
+			ls_set_errno(LS_INVALID_HANDLE);
+			return NULL;
+		}
+
+		return fiber;
+	}
+
+	if (f == LS_MAIN)
+	{
+		if (_main_fiber.lpFiber)
+			return &_main_fiber;
+
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	return f;
+#else
+	struct ls_fiber *fiber;
+
+	if (!f)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	if (f == LS_SELF)
+	{
+		if (!_current_fiber)
+		{
+			ls_set_errno(LS_INVALID_HANDLE);
+			return NULL;
+		}
+
+		return _current_fiber;
+	}
+
+	if (f == LS_MAIN)
+	{
+		if (_main_fiber.ctx.uc_stack.ss_sp)
+			return &_main_fiber;
+
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	return f;
+#endif // LS_WINDOWS
+}
+
+int ls_convert_to_fiber(void *up)
+{
+#if LS_WINDOWS
+	if (_main_fiber.lpFiber)
+		return 0;
+
+	_main_fiber.lpFiber = ConvertThreadToFiber(NULL);
+	if (!_main_fiber.lpFiber)
+		return ls_set_errno_win32(GetLastError());
+
+	_main_fiber.func = NULL;
+	_main_fiber.up = up;
+
+	return 0;
+#else
+	int rc;
+	
+	if (_main_fiber.ctx.uc_stack.ss_sp)
+		return 0;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	rc = getcontext(&_main_fiber.ctx);
+#pragma clang diagnostic pop
+
+	if (rc == -1)
+		return ls_set_errno_errno(errno);
+
+	_main_fiber.func = NULL;
+	_main_fiber.up = up;
+
+	_current_fiber = &_main_fiber;
+
+	return 0;
+#endif // LS_WINDOWS
+}
+
+int ls_convert_to_thread(void)
+{
+#if LS_WINDOWS
+	if (!_main_fiber.lpFiber)
+		return 0;
+
+	if (!ConvertFiberToThread())
+		return ls_set_errno_win32(GetLastError());
+
+	_main_fiber.lpFiber = NULL;
+	_main_fiber.up = NULL;
+
+	return 0;
+#else
+	if (!_main_fiber.ctx.uc_stack.ss_sp)
+		return 0;
+
+	if (_current_fiber != &_main_fiber)
+		return ls_set_errno(LS_INVALID_STATE);
+
+	memset(&_main_fiber.ctx, 0, sizeof(_main_fiber.ctx));
+	_current_fiber = NULL;
+
+	return 0;
+#endif // LS_WINDOWS
+}
+
+ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	if (!func)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	if (!_main_fiber.lpFiber)
+	{
+		// current thread is not a fiber
+		ls_set_errno(LS_INVALID_STATE);
+		return NULL;
+	}
+
+	f = ls_handle_create(&FiberClass, 0);
+	if (!f)
+		return NULL;
+
+	f->lpFiber = CreateFiber(0, &ls_fiber_entry_thunk, f);
+	if (!f->lpFiber)
+	{
+		ls_set_errno_win32(GetLastError());
+		ls_handle_dealloc(f);
+		return NULL;
+	}
+
+	f->func = func;
+	f->up = up;
+
+	return f;
+#else
+	struct ls_fiber *f;
+	int rc;
+	int lo, hi;
+
+	if (!func)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
+	if (!_main_fiber.ctx.uc_stack.ss_sp)
+	{
+		// current thread is not a fiber
+		ls_set_errno(LS_INVALID_STATE);
+		return NULL;
+	}
+
+	f = ls_handle_create(&FiberClass, 0);
+	if (!f)
+		return NULL;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	rc = getcontext(&f->ctx);
+#pragma clang diagnostic pop
+
+	if (rc == -1)
+	{
+		ls_set_errno_errno(errno);
+		ls_handle_dealloc(f);
+		return NULL;
+	}
+
+	f->ctx.uc_stack.ss_sp = malloc(SIGSTKSZ);
+	f->ctx.uc_stack.ss_size = SIGSTKSZ;
+	f->ctx.uc_link = &_main_fiber.ctx; // return to main fiber
+
+	// ucontext function takes int as arguments, so we need to split the pointer
+	ls_split_pointer(f, &lo, &hi);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	makecontext(&f->ctx, (void(*)(void))&ls_fiber_entry_thunk, 2, lo, hi);
+#pragma clang diagnostic pop
+
+	f->func = func;
+	f->up = up;
+
+	return f;
+#endif // LS_WINDOWS
+}
+
+void ls_fiber_switch(ls_handle fiber)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	if (!_main_fiber.lpFiber)
+		return; // Current thread is not a fiber
+
+	f = ls_resolve_fiber(fiber);
+	if (f)
+		SwitchToFiber(f->lpFiber);
+#else
+	struct ls_fiber *f;
+
+	if (!_main_fiber.ctx.uc_stack.ss_sp)
+		return; // Current thread is not a fiber
+
+	f = ls_resolve_fiber(fiber);
+	if (f == _current_fiber)
+		return; // Already on this fiber
+
+	if (f)
+	{
+		_current_fiber = f;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+		setcontext(&f->ctx);
+#pragma clang diagnostic pop
+	}
+#endif // LS_WINDOWS
+}
+
+void ls_fiber_sched(void)
+{
+	ls_fiber_switch(LS_MAIN);
+}
+
+ls_handle ls_fiber_self(void)
+{
+#if LS_WINDOWS
+	return GetCurrentFiber() ? LS_SELF : NULL;
+#else
+	return _main_fiber.ctx.uc_stack.ss_sp ? LS_SELF : NULL;
+#endif // LS_WINDOWS
+}
+
+void *ls_fiber_get_data(ls_handle fiber)
+{
+	struct ls_fiber *f;
+	f = ls_resolve_fiber(fiber);
+	return f ? f->up : NULL;
+}
+
+LS_NORETURN void ls_fiber_exit(int code)
+{
+#if LS_WINDOWS
+	struct ls_fiber *f;
+
+	f = GetFiberData();
+
+	if (!f)
+		ExitThread(code); // Not a fiber
+
+	f->exit_code = code;
+
+	if (f == &_main_fiber)
+		ExitThread(code); // Main fiber
+
+	if (!_main_fiber.lpFiber)
+		ExitThread(code); // No fiber to switch to
+
+	SwitchToFiber(_main_fiber.lpFiber);
+#else
+	struct ls_fiber *f;
+
+	f = ls_resolve_fiber(LS_SELF);
+
+	if (!f)
+		pthread_exit((void *)(intptr_t)code);
+
+	f->exit_code = code;
+
+	if (f == &_main_fiber)
+		pthread_exit((void *)(intptr_t)code);
+
+	if (!_main_fiber.ctx.uc_stack.ss_sp)
+		pthread_exit((void *)(intptr_t)code);
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	setcontext(&_main_fiber.ctx);
+#pragma clang diagnostic pop
+
+	abort(); // Someone switched to an exited fiber
 #endif // LS_WINDOWS
 }

@@ -490,7 +490,7 @@ ls_handle ls_create_perf_monitor(void)
 	PDH_STATUS rc;
 	DWORD dwPid;
 
-	m = ls_handle_create(&PerfMonitor);
+	m = ls_handle_create(&PerfMonitor, 0);
 	if (!m)
 		return NULL;
 
@@ -537,7 +537,7 @@ ls_handle ls_create_perf_monitor(void)
 	kern_return_t kr;
 	struct ls_perf_monitor *m;
 	
-	m = ls_handle_create(&PerfMonitor);
+	m = ls_handle_create(&PerfMonitor, 0);
 	if (!m)
 		return NULL;
 	

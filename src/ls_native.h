@@ -71,6 +71,7 @@ int win32_to_error(DWORD err);
 #include <wordexp.h>
 #include <aio.h>
 #include <signal.h>
+#include <ucontext.h>
 #include <sys/mman.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -116,8 +117,6 @@ int ls_create_to_oflags(int create);
 
 native_flags_t ls_protect_to_flags(int protect);
 int ls_flags_to_protect(native_flags_t prot);
-
-native_file_t ls_resolve_file(ls_handle fh);
 
 #if LS_DARWIN
 int kr_to_error(kern_return_t kr);
