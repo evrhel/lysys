@@ -317,6 +317,7 @@ struct ls_fiber
 #if LS_WINDOWS
 	LPVOID lpFiber;
 #else
+    void *stack;
 	ucontext_t ctx;
 #endif // LS_WINDOWS
 };
@@ -332,10 +333,13 @@ static void ls_fiber_dtor(struct ls_fiber *fiber)
 #if LS_WINDOWS
 	DeleteFiber(fiber->lpFiber);
 #else
-	if (fiber == &_main_fiber || fiber == _current_fiber)
-		abort(); // Cannot delete main fiber or current fiber
+	if (fiber == &_main_fiber)
+		abort(); // Cannot delete main fiber
+    
+    if (_current_fiber != &_main_fiber && fiber == _current_fiber)
+        abort(); // Cannot delete self
 
-	free(fiber->ctx.uc_stack.ss_sp);
+    free(fiber->stack);
 #endif // LS_WINDOWS
 }
 
@@ -352,6 +356,7 @@ static void CALLBACK ls_fiber_entry_thunk(void *up)
 {
 	struct ls_fiber *fiber = up;
 	fiber->exit_code = fiber->func(fiber->up);
+    ls_fiber_sched();
 }
 
 #else
@@ -425,26 +430,18 @@ static inline struct ls_fiber *ls_resolve_fiber(ls_handle f)
 		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
 	}
+    
+    if (!_current_fiber)
+    {
+        ls_set_errno(LS_INVALID_HANDLE);
+        return NULL;
+    }
 
 	if (f == LS_SELF)
-	{
-		if (!_current_fiber)
-		{
-			ls_set_errno(LS_INVALID_HANDLE);
-			return NULL;
-		}
-
 		return _current_fiber;
-	}
-
+    
 	if (f == LS_MAIN)
-	{
-		if (_main_fiber.ctx.uc_stack.ss_sp)
-			return &_main_fiber;
-
-		ls_set_errno(LS_INVALID_HANDLE);
-		return NULL;
-	}
+        return &_main_fiber;
 
 	return f;
 #endif // LS_WINDOWS
@@ -467,7 +464,7 @@ int ls_convert_to_fiber(void *up)
 #else
 	int rc;
 	
-	if (_main_fiber.ctx.uc_stack.ss_sp)
+	if (_current_fiber)
 		return 0;
 
 #pragma clang diagnostic push
@@ -501,7 +498,7 @@ int ls_convert_to_thread(void)
 
 	return 0;
 #else
-	if (!_main_fiber.ctx.uc_stack.ss_sp)
+	if (!_current_fiber)
 		return 0;
 
 	if (_current_fiber != &_main_fiber)
@@ -559,7 +556,7 @@ ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
 		return NULL;
 	}
 
-	if (!_main_fiber.ctx.uc_stack.ss_sp)
+	if (!_current_fiber)
 	{
 		// current thread is not a fiber
 		ls_set_errno(LS_INVALID_STATE);
@@ -569,22 +566,31 @@ ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
 	f = ls_handle_create(&FiberClass, 0);
 	if (!f)
 		return NULL;
-
+    
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-	rc = getcontext(&f->ctx);
+    rc = getcontext(&f->ctx);
 #pragma clang diagnostic pop
+    
+    f->stack = malloc(SIGSTKSZ);
+    if (!f->stack)
+    {
+        ls_set_errno(LS_OUT_OF_MEMORY);
+        ls_handle_dealloc(f);
+        return NULL;
+    }
+    
+    f->ctx.uc_stack.ss_sp = f->stack;
+    f->ctx.uc_stack.ss_size = SIGSTKSZ;
+    f->ctx.uc_link = 0;
 
 	if (rc == -1)
 	{
 		ls_set_errno_errno(errno);
+        free(f->stack);
 		ls_handle_dealloc(f);
 		return NULL;
 	}
-
-	f->ctx.uc_stack.ss_sp = malloc(SIGSTKSZ);
-	f->ctx.uc_stack.ss_size = SIGSTKSZ;
-	f->ctx.uc_link = &_main_fiber.ctx; // return to main fiber
 
 	// ucontext function takes int as arguments, so we need to split the pointer
 	ls_split_pointer(f, &lo, &hi);
@@ -593,7 +599,7 @@ ls_handle ls_fiber_create(ls_thread_func_t func, void *up)
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 	makecontext(&f->ctx, (void(*)(void))&ls_fiber_entry_thunk, 2, lo, hi);
 #pragma clang diagnostic pop
-
+    
 	f->func = func;
 	f->up = up;
 
@@ -614,8 +620,9 @@ void ls_fiber_switch(ls_handle fiber)
 		SwitchToFiber(f->lpFiber);
 #else
 	struct ls_fiber *f;
-
-	if (!_main_fiber.ctx.uc_stack.ss_sp)
+    ucontext_t *old_ctx;
+    
+	if (!_current_fiber)
 		return; // Current thread is not a fiber
 
 	f = ls_resolve_fiber(fiber);
@@ -624,11 +631,11 @@ void ls_fiber_switch(ls_handle fiber)
 
 	if (f)
 	{
+        old_ctx = &_current_fiber->ctx;
 		_current_fiber = f;
-
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-		setcontext(&f->ctx);
+        swapcontext(old_ctx, &f->ctx);
 #pragma clang diagnostic pop
 	}
 #endif // LS_WINDOWS
@@ -687,7 +694,7 @@ LS_NORETURN void ls_fiber_exit(int code)
 	if (f == &_main_fiber)
 		pthread_exit((void *)(intptr_t)code);
 
-	if (!_main_fiber.ctx.uc_stack.ss_sp)
+	if (!_current_fiber)
 		pthread_exit((void *)(intptr_t)code);
 
 #pragma clang diagnostic push
