@@ -108,12 +108,24 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	ls_file_t *pf;
 	int flags;
 
+	if (!st)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
+	{
+		st->size = 0;
+		st->ctime = 0;
+		st->atime = 0;
+		st->mtime = 0;
+		st->type = LS_FT_SOCK;
+		return 0;
+	}
+
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
 
-	if (!st)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
+	
 
 	bRet = GetFileInformationByHandle(pf->hFile, &fi);
 	if (!bRet)
@@ -149,6 +161,19 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	struct ls_file *pf;
 	int flags;
 	int rc;
+
+	if (!st)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+	{
+		st->size = 0;
+		st->ctime = 0;
+		st->atime = 0;
+		st->mtime = 0;
+		st->type = LS_FT_SOCK;
+		return 0;
+	}
 
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)

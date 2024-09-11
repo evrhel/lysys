@@ -17,6 +17,7 @@ set(LYSYS_SOURCES
     ${src}/ls_memory.c
     ${src}/ls_mmap.c
     ${src}/ls_native.c
+    ${src}/ls_net.c
     ${src}/ls_proc.c
     ${src}/ls_random.c
     ${src}/ls_shell.c
@@ -53,6 +54,7 @@ if (WIN32)
     target_link_libraries(liblysys PRIVATE userenv)
     target_link_libraries(liblysys PRIVATE Pdh)
     target_link_libraries(liblysys PRIVATE bcrypt)
+    target_link_libraries(liblysys PRIVATE Ws2_32)
 elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
     target_link_libraries(liblysys PUBLIC ${COCOA_LIBRARY})

@@ -8,6 +8,7 @@
 #include <lysys/ls_random.h>
 #include <lysys/ls_thread.h>
 #include <lysys/ls_event.h>
+#include <lysys/ls_net.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -119,6 +120,9 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 	LARGE_INTEGER liNewPointer;
 	int flags;
 
+	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
+		return ls_set_errno(LS_INVALID_HANDLE);
+
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
@@ -134,6 +138,9 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 	struct ls_file *pf;
 	off_t r;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
+		return ls_set_errno(LS_INVALID_HANDLE);
 
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
@@ -157,6 +164,9 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	DWORD dwRead, dwToRead;
 	size_t remaining;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_net_recv(fh, buffer, size);
 
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
@@ -192,6 +202,9 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	size_t bytes_read;
 	size_t remaining;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_net_recv(fh, buffer, size);
 
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
@@ -237,6 +250,9 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	size_t remaining;
 	int flags;
 
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_net_send(fh, buffer, size);
+
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return -1;
@@ -269,6 +285,9 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	size_t bytes_written;
 	size_t remaining;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_net_send(fh, buffer, size);
 
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
@@ -312,6 +331,9 @@ int ls_flush(ls_handle file)
 	HANDLE hFile;
 	int flags;
 
+	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
+		return 0;
+
 	hFile = ls_resolve_file(file, &flags);
 	if (!hFile)
 		return -1;
@@ -327,6 +349,9 @@ int ls_flush(ls_handle file)
 	struct ls_file *pf;
 	int rc;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
+		return 0;
 
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
@@ -488,6 +513,9 @@ ls_handle ls_aio_open(ls_handle fh)
 	int rc;
 	int flags;
 
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_set_errno(LS_INVALID_HANDLE);
+
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return NULL;
@@ -527,6 +555,9 @@ ls_handle ls_aio_open(ls_handle fh)
 	int rc;
 	struct sigevent *sev;
 	int flags;
+
+	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
+		return ls_set_errno(LS_INVALID_HANDLE);
 
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)

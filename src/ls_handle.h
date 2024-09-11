@@ -21,10 +21,13 @@
 #define LS_AIO (13 | LS_WAITABLE)
 #define LS_PIPE (14 | LS_IO_STREAM)
 #define LS_FIBER 15
+#define LS_SOCKET (16 | LS_IO_STREAM)
+#define LS_SERVER 17
 
 // handle is statically allocated, will never have memory deallocated
 // or destructor called
 #define LS_HANDLE_FLAG_STATIC 0x10000
+#define LS_HANDLE_FLAG_SOCKET 0x1
 
 /* Reserved psuedo-handles */
 
@@ -39,6 +42,7 @@
 #define LS_HANDLE_DATA(hi) ((ls_handle)((hi) + 1))
 #define LS_HANDLE_INFO(h) ((struct ls_handle_info *)(h)-1)
 #define LS_HANDLE_CLASS(h) (LS_HANDLE_INFO(h)->clazz)
+#define LS_HANDLE_IS_TYPE(h, t) (!LS_IS_PSUEDO_HANDLE(h) && LS_HANDLE_CLASS(h)->type == (t))
 
 // handle info initializer for static handles
 #define __hiinit(_clazz) \

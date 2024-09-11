@@ -11,6 +11,7 @@
 #include "ls_ioutils.h"
 #include "ls_memory.h"
 #include "ls_mmap.h"
+#include "ls_net.h"
 #include "ls_proc.h"
 #include "ls_random.h"
 #include "ls_shell.h"
