@@ -686,20 +686,37 @@ native_flags_t ls_protect_to_flags(int protect)
 {
 #if LS_WINDOWS
 	DWORD flProtect = 0;
+	int read, write, exec, copy;
 
-	if (protect & LS_PROT_READ)
-		flProtect |= PAGE_READONLY;
+	read = !!(protect & LS_PROT_READ);
+	write = !!(protect & LS_PROT_WRITE);
+	exec = !!(protect & LS_PROT_EXEC);
+	copy = !!(protect & LS_PROT_WRITECOPY);
 
-	if (protect & LS_PROT_WRITE)
-		flProtect |= PAGE_READWRITE;
+	if (read)
+	{
+		if (write)
+		{
+			if (exec)
+				return copy ? PAGE_EXECUTE_WRITECOPY : PAGE_EXECUTE_READWRITE;
+			return copy ? PAGE_WRITECOPY : PAGE_READWRITE;
+		}
 
-	if (protect & LS_PROT_WRITECOPY)
-		flProtect |= PAGE_WRITECOPY;
+		if (exec)
+			return copy ? PAGE_EXECUTE_WRITECOPY : PAGE_EXECUTE_READ;
+		return copy ? PAGE_WRITECOPY : PAGE_READONLY;		
+	}
 
-	if (protect & LS_PROT_EXEC)
-		flProtect |= PAGE_EXECUTE;
+	if (write)
+	{
+		if (exec)
+			return copy ? PAGE_EXECUTE_WRITECOPY :PAGE_EXECUTE_READWRITE;
+		return copy ? PAGE_WRITECOPY : PAGE_READWRITE;
+	}
 
-	return flProtect;
+	if (exec)
+		return copy ? PAGE_EXECUTE_WRITECOPY : PAGE_EXECUTE_READ;
+	return copy ? PAGE_WRITECOPY : PAGE_NOACCESS;
 #else
 	int prot = 0;
 

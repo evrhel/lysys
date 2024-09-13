@@ -43,10 +43,11 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
 		return ls_set_errno(LS_INVALID_HANDLE);
 
-	if (protect & (LS_PROT_READ | LS_PROT_WRITE | LS_PROT_WRITECOPY))
-		dwAccess = FILE_MAP_WRITE;
-	else if (protect & LS_PROT_READ)
-		dwAccess = FILE_MAP_READ;
+	dwAccess = 0;
+	if (protect & LS_PROT_READ)
+		dwAccess |= FILE_MAP_READ;
+	if (protect & LS_PROT_WRITE)
+		dwAccess |= FILE_MAP_WRITE;
 
 	if (dwAccess == 0)
 		return NULL;

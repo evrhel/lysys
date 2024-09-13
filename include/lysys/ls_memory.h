@@ -6,6 +6,7 @@
 #define LS_PROT_NONE 0
 #define LS_PROT_READ 1
 #define LS_PROT_WRITE 2
+#define LS_PROT_READWRITE (LS_PROT_READ | LS_PROT_WRITE)
 #define LS_PROT_WRITECOPY 4
 #define LS_PROT_EXEC 8
 
