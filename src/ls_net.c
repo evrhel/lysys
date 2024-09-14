@@ -17,9 +17,6 @@
 
 #include "ls_native.h"
 
-#define INET_ADDRSTRLEN 16
-#define INET6_ADDRSTRLEN 46
-
 typedef struct ls_socket
 {
 	// Must be first member

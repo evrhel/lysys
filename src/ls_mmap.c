@@ -41,7 +41,10 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	int flags;
 
 	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
-		return ls_set_errno(LS_INVALID_HANDLE);
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
 
 	dwAccess = 0;
 	if (protect & LS_PROT_READ)
