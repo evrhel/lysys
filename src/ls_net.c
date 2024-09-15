@@ -386,8 +386,8 @@ int ls_net_shutdown(ls_handle sock, int how)
 #if LS_WINDOWS
 	ls_socket_t *socket = sock;
 
-	if (!sock)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 
 	switch (how)
 	{
@@ -429,6 +429,8 @@ int ls_net_shutdown(ls_handle sock, int how)
 
 	return 0;
 #else
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDOWS
 }
@@ -437,11 +439,8 @@ const char *ls_net_gethost(ls_handle sock)
 {
 	ls_socket_t *socket = sock;
 
-	if (!sock)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(sock, LS_SOCKET))
 		return NULL;
-	}
 
 	ls_set_errno(LS_SUCCESS);
 	return socket->host;
@@ -451,11 +450,8 @@ unsigned short ls_net_getport(ls_handle sock)
 {
 	ls_socket_t *socket = sock;
 
-	if (!sock)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
-		return -1;
-	}
+	if (ls_type_check(sock, LS_SOCKET))
+		return 0;
 
 	ls_set_errno(LS_SUCCESS);
 	return socket->port;
@@ -469,8 +465,8 @@ size_t ls_net_recv(ls_handle sock, void *buffer, size_t size)
 	size_t remain;
 	char *buf;
 
-	if (!sock)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 
 	if (!socket->can_recv)
 		return ls_set_errno(LS_ACCESS_DENIED);
@@ -495,6 +491,8 @@ size_t ls_net_recv(ls_handle sock, void *buffer, size_t size)
 
 	return size - remain;
 #else
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDOWS
 }
@@ -507,8 +505,8 @@ size_t ls_net_send(ls_handle sock, const void *buffer, size_t size)
 	size_t remain;
 	const char *buf;
 
-	if (!sock)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 
 	if (!socket->can_send)
 		return ls_set_errno(LS_ACCESS_DENIED);
@@ -533,6 +531,8 @@ size_t ls_net_send(ls_handle sock, const void *buffer, size_t size)
 
 	return size - remain;
 #else
+	if (ls_type_check(sock, LS_SOCKET))
+		return -1;
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDOWS
 }

@@ -109,6 +109,12 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 #if LS_WINDOWS
 	struct ls_thread *th;
 
+	if (!func)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
+
 	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
 		return NULL;
@@ -131,6 +137,12 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up)
 #if LS_DARWIN
 	uint64_t id;
 #endif // LS_DARWIN
+
+	if (!func)
+	{
+		ls_set_errno(LS_INVALID_ARGUMENT);
+		return NULL;
+	}
 
 	th = ls_handle_create(&ThreadClass, 0);
 	if (!th)
@@ -161,11 +173,11 @@ unsigned long ls_thread_id(ls_handle th)
 {
 	struct ls_thread *t = th;
 
-	if (!th)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (th == LS_SELF)
 		return ls_thread_id_self();
+
+	if (ls_type_check(th, LS_THREAD))
+		return -1;
 
 	return t->id;
 }
@@ -176,9 +188,6 @@ int ls_thread_set_priority(ls_handle th, int priority)
 	struct ls_thread *t = th;
 	int nPriority;
 	HANDLE hThread;
-
-	if (!th)
-		return ls_set_errno(LS_INVALID_HANDLE);
 
 	switch (priority)
 	{
@@ -201,7 +210,14 @@ int ls_thread_set_priority(ls_handle th, int priority)
 		break;
 	}
 
-	hThread = th == LS_SELF ? GetCurrentThread() : t->hThread;
+	if (th == LS_SELF)
+		hThread = GetCurrentThread();
+	else
+	{
+		if (ls_type_check(th, LS_THREAD))
+			return -1;
+		hThread = t->hThread;
+	}
 
 	if (!SetThreadPriority(hThread, nPriority))
 		return ls_set_errno_win32(GetLastError());
@@ -313,8 +329,8 @@ int ls_tls_set(ls_handle tlsh, void *value)
 	BOOL b;
 	struct ls_tls *tls = tlsh;
 
-	if (!tlsh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(tlsh, LS_TLS))
+		return -1;
 
 	b = TlsSetValue(tls->dwTlsIndex, value);
 	if (!b)
@@ -334,6 +350,9 @@ void *ls_tls_get(ls_handle tlsh)
 	LPVOID lpValue;
 	struct ls_tls *tls = tlsh;
 	DWORD dwError;
+
+	if (ls_type_check(tlsh, LS_TLS))
+		return NULL;
 
 	lpValue = TlsGetValue(tls->dwTlsIndex);
 	if (!lpValue)
@@ -436,11 +455,8 @@ static inline struct ls_fiber *ls_resolve_fiber(ls_handle f)
 #if LS_WINDOWS
 	struct ls_fiber *fiber;
 
-	if (!f)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(f, LS_FIBER))
 		return NULL;
-	}
 
 	if (f == LS_SELF)
 	{
@@ -467,11 +483,8 @@ static inline struct ls_fiber *ls_resolve_fiber(ls_handle f)
 #else
 	struct ls_fiber *fiber;
 
-	if (!f)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(f, LS_FIBER))
 		return NULL;
-	}
     
     if (!_current_fiber)
     {

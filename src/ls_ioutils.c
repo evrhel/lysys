@@ -26,7 +26,13 @@ void *ls_read_all_bytes(ls_handle fh, size_t *size)
 	uint8_t buf[BUFFER_SIZE];
 	size_t bytes_read;
 
-	if (!fh || !size)
+	if (!fh)
+	{
+		ls_set_errno(LS_INVALID_HANDLE);
+		return NULL;
+	}
+
+	if (!size)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
@@ -74,7 +80,7 @@ char *ls_readline(ls_handle fh, size_t *len)
 
 	if (!fh)
 	{
-		ls_set_errno(LS_INVALID_ARGUMENT);
+		ls_set_errno(LS_INVALID_HANDLE);
 		return NULL;
 	}
 
@@ -198,18 +204,15 @@ size_t ls_vfprintf(ls_handle fh, const char *format, va_list args)
 	int rc;
 	size_t count;
 
-	if (!fh || !format)
-	{
-		ls_set_errno(LS_INVALID_ARGUMENT);
-		return -1;
-	}
+	if (!fh)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if (!format)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	rc = vsnprintf(NULL, 0, format, args);
 	if (rc < 0)
-	{
-		ls_set_errno(LS_UNKNOWN_ERROR);
-		return -1;
-	}
+		return ls_set_errno(LS_UNKNOWN_ERROR);
 
 	count = rc;
 	buf = ls_malloc(count + 1);

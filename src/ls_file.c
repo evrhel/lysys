@@ -598,8 +598,8 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	ULARGE_INTEGER uliOffset = { .QuadPart = offset };
 	DWORD dwTransferred;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	if (!buffer || size == 0)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
@@ -650,8 +650,8 @@ int ls_aio_read(ls_handle aioh, uint64_t offset, volatile void *buffer, size_t s
 	struct ls_aio *aio;
 	int rc;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	aio = aioh;
 
@@ -703,8 +703,8 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	ULARGE_INTEGER uliOffset = { .QuadPart = offset };
 	DWORD dwTransferred;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	if (!(LS_HANDLE_INFO(aioh)->flags & LS_FILE_WRITE))
 		return ls_set_errno(LS_INVALID_ARGUMENT);
@@ -752,8 +752,8 @@ int ls_aio_write(ls_handle aioh, uint64_t offset, const volatile void *buffer, s
 	struct ls_aio *aio;
 	int rc;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	aio = aioh;
 
@@ -803,8 +803,8 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 	BOOL b;
 	DWORD dwErr;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	lock_lock(&aio->lock);
 
@@ -834,8 +834,8 @@ int ls_aio_status(ls_handle aioh, size_t *transferred)
 	int rc;
 	int status;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	lock_lock(&aio->lock);
 
@@ -869,8 +869,8 @@ int ls_aio_cancel(ls_handle aioh)
 	struct ls_aio *aio = aioh;
 	BOOL b;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	b = CancelIoEx(aio->hFile, &aio->ov);
 	if (!b)
@@ -881,8 +881,8 @@ int ls_aio_cancel(ls_handle aioh)
 	struct ls_aio *aio;
 	int rc;
 
-	if (!aioh)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(aioh, LS_AIO))
+		return -1;
 
 	aio = aioh;
 

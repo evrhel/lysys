@@ -105,16 +105,15 @@ int ls_event_signaled(ls_handle evt)
 #if LS_WINDOWS
     struct ls_event *ev = evt;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
-
+    if (ls_type_check(evt, LS_EVENT))
+		return -1;
     return WaitForSingleObject(ev->hEvent, 0) == WAIT_OBJECT_0;
 #else
     struct ls_event *ev = evt;
     int rc;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
+    if (ls_type_check(evt, LS_EVENT))
+        return -1;
 
     lock_lock(&ev->lock);
     rc = ev->signaled;
@@ -130,8 +129,8 @@ int ls_event_set(ls_handle evt)
     BOOL b;
     struct ls_event *ev = evt;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
+    if (ls_type_check(evt, LS_EVENT))
+        return -1;
 
     b = SetEvent(ev->hEvent);
     if (!b)
@@ -141,8 +140,8 @@ int ls_event_set(ls_handle evt)
     struct ls_event *ev = evt;
     int rc;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
+    if (ls_type_check(evt, LS_EVENT))
+        return -1;
 
     lock_lock(&ev->lock);
     ev->signaled = 1;
@@ -159,8 +158,8 @@ int ls_event_reset(ls_handle evt)
     BOOL b;
     struct ls_event *ev = evt;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
+    if (ls_type_check(evt, LS_EVENT))
+        return -1;
 
     b = ResetEvent(ev->hEvent);
     if (!b)
@@ -170,8 +169,8 @@ int ls_event_reset(ls_handle evt)
     struct ls_event *ev = evt;
     int rc;
 
-    if (!ev)
-        return ls_set_errno(LS_INVALID_HANDLE);
+    if (ls_type_check(evt, LS_EVENT))
+        return -1;
 
     lock_lock(&ev->lock);
     ev->signaled = 0;

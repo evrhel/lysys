@@ -40,11 +40,9 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 	DWORD dwAccess = 0;
 	int flags;
 
-	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	pf = ls_resolve_file(file, &flags);
+	if (!pf)
 		return NULL;
-	}
 
 	dwAccess = 0;
 	if (protect & LS_PROT_READ)
@@ -65,10 +63,6 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 		liSize.QuadPart = 0;
 	else
 		liSize.QuadPart = size + offset;
-
-	pf = ls_resolve_file(file, &flags);
-	if (!pf)
-		return NULL;
 
 	if (flags & LS_FLAG_ASYNC)
 	{
@@ -177,8 +171,9 @@ void *ls_mmap(ls_handle file, size_t size, size_t offset, int protect, ls_handle
 int ls_munmap(ls_handle map, void *addr)
 {
 #if LS_WINDOWS
-	if (!map)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(map, LS_FILEMAPPING))
+		return -1;
+
 	if (!addr)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
@@ -188,8 +183,8 @@ int ls_munmap(ls_handle map, void *addr)
 	ls_close(map);
 	return 0;
 #else
-	if (!map)
-		return ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(map, LS_FILEMAPPING))
+		return -1;
 
 	if (!addr)
 		return ls_set_errno(LS_INVALID_ARGUMENT);

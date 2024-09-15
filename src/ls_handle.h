@@ -3,6 +3,8 @@
 
 #include <lysys/ls_defs.h>
 
+#define LS_HANDLE_TYPE_FLAG_MASK 0xffff00
+
 #define LS_WAITABLE 0x1000
 #define LS_IO_STREAM 0x2000
 
@@ -27,7 +29,6 @@
 // handle is statically allocated, will never have memory deallocated
 // or destructor called
 #define LS_HANDLE_FLAG_STATIC 0x10000
-#define LS_HANDLE_FLAG_SOCKET 0x1
 
 /* Reserved psuedo-handles */
 
@@ -98,5 +99,21 @@ ls_handle ls_handle_create(const struct ls_class *clazz, int flags);
 //! 
 //! \param h The handle to deallocate.
 void ls_handle_dealloc(ls_handle h);
+
+//! \brief Check if handle is of a certain type.
+//! 
+//! This is a more advanced version of LS_HANDLE_IS_TYPE. It allows
+//! checking of flags as well as the type and will set _ls_errno
+//! to LS_INVALID_HANDLE if the handle is not of the given type.
+//! 
+//! \param h The handle to check. Psuedo-handles will always return
+//! -1.
+//! \param type The type to check against. May by set to 0 alongside
+//! a combination of flags to check for flags only.
+//! 
+//! \return 0 if the handle is of the given type, -1 if not. Sets
+//! _ls_errno to LS_INVALID_HANDLE if the handle is not of the given
+//! type or the flags do not match.
+int ls_type_check(ls_handle h, int type);
 
 #endif // _LS_HANDLE_H_

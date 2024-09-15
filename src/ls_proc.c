@@ -771,11 +771,11 @@ int ls_kill(ls_handle ph, int exit_code)
 	BOOL b;
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		ExitProcess(exit_code);
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	b = TerminateProcess(proc->pi.hProcess, exit_code);
 	if (!b)
@@ -786,11 +786,11 @@ int ls_kill(ls_handle ph, int exit_code)
 	struct ls_proc *proc = ph;
 	int rc;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		exit(exit_code);
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	rc = kill(proc->pid, 1);
 	if (rc == -1)
@@ -805,11 +805,11 @@ int ls_proc_state(ls_handle ph)
 	DWORD dwResult;
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return -1;
-
 	if (ph == LS_SELF)
 		return LS_PROC_RUNNING;
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	dwResult = WaitForSingleObject(proc->pi.hProcess, 0);
 
@@ -824,11 +824,11 @@ int ls_proc_state(ls_handle ph)
 	struct ls_proc *proc = ph;
 	int rc;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (proc->status != LS_PROC_RUNNING)
 		return proc->status;
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	rc = kill(proc->pid, 0);
 	if (rc == 0)
@@ -851,11 +851,11 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 	DWORD dwResult;
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		return 1;
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	dwResult = WaitForSingleObject(proc->pi.hProcess, 0);
 	if (dwResult == WAIT_TIMEOUT)
@@ -876,11 +876,11 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 #else
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		return 1;
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	if (proc->status == 0)
 		return 1;
@@ -906,14 +906,14 @@ size_t ls_proc_path(ls_handle ph, char *path, size_t size)
 {
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (!path != !size)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	if (ph == LS_SELF)
 		return ls_get_self_path(path, size);
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	if (size == 0)
 		return proc->path_len;
@@ -930,14 +930,14 @@ size_t ls_proc_name(ls_handle ph, char *name, size_t size)
 	struct ls_proc *proc = ph;
 	size_t len;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (!name != !size)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
 	if (ph == LS_SELF)
 		return ls_proc_self_name(name, size);
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	len = proc->path_len - (proc->name - proc->path);
 
@@ -956,21 +956,21 @@ unsigned long ls_getpid(ls_handle ph)
 #if LS_WINDOWS
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		return GetCurrentProcessId();
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	return proc->pi.dwProcessId;
 #else
 	struct ls_proc *proc = ph;
 
-	if (!ph)
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	if (ph == LS_SELF)
 		return getpid();
+
+	if (ls_type_check(ph, LS_PROC))
+		return -1;
 
 	return proc->pid;
 #endif // LS_WINDOWS

@@ -948,11 +948,11 @@ size_t ls_watch_get_result(ls_handle watch, struct ls_watch_event *event, size_t
 
 	w = watch;
 
-	if (!w)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
 	if (!event != !cb)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(watch, LS_WATCH))
+		return -1;
 
 	lock_lock(&w->lock);
 

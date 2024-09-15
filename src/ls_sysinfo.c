@@ -572,10 +572,11 @@ int ls_query_perf_monitor(ls_handle mh, struct ls_sysmetrics *sm)
 	BOOL b;
 	PDH_STATUS ps;
 
-	if (!mh)
-		return ls_set_errno(LS_INVALID_HANDLE);
 	if (!sm)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(mh, LS_PERF_MONITOR))
+		return -1;
 
 	// Collect data from the query
 
@@ -633,10 +634,11 @@ int ls_query_perf_monitor(ls_handle mh, struct ls_sysmetrics *sm)
 	struct ls_perf_monitor *m;
 	int rc;
 	
-	if (!mh)
-		return ls_set_errno(LS_INVALID_HANDLE);
 	if (!sm)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(mh, LS_PERF_MONITOR))
+		return -1;
 	
 	m = mh;
 	
@@ -648,6 +650,12 @@ int ls_query_perf_monitor(ls_handle mh, struct ls_sysmetrics *sm)
 	
 	return 0;
 #else
+	if (!sm)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(mh, LS_PERF_MONITOR))
+		return -1;
+
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDOWS
 }

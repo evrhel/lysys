@@ -33,6 +33,24 @@ void ls_handle_dealloc(ls_handle h)
 		ls_free(hi);
 }
 
+int ls_type_check(ls_handle h, int type)
+{
+	register int class_type;
+	
+	if (LS_IS_PSUEDO_HANDLE(h))
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	class_type = LS_HANDLE_CLASS(h)->type;
+
+	if ((type & ~LS_HANDLE_TYPE_FLAG_MASK) && ((class_type ^ type) & ~LS_HANDLE_TYPE_FLAG_MASK))
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if ((~class_type & type) & LS_HANDLE_TYPE_FLAG_MASK)
+		return ls_set_errno(LS_INVALID_HANDLE);
+	
+	return 0;
+}
+
 int ls_wait(ls_handle h)
 {
 	return ls_timedwait(h, LS_INFINITE);
@@ -60,11 +78,7 @@ void ls_close(ls_handle h)
 		return;
 
 	hi = LS_HANDLE_INFO(h);
-
-	if (!(hi->flags & LS_HANDLE_FLAG_STATIC))
-	{
-		if (hi->clazz->dtor)
-			hi->clazz->dtor(h);
-	}
+	if (!(hi->flags & LS_HANDLE_FLAG_STATIC) && hi->clazz->dtor)
+		hi->clazz->dtor(h);
 }
 

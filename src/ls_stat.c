@@ -153,16 +153,6 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	if (!st)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
-	{
-		st->size = 0;
-		st->ctime = 0;
-		st->atime = 0;
-		st->mtime = 0;
-		st->type = LS_FT_SOCK;
-		return 0;
-	}
-
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
@@ -342,11 +332,8 @@ struct ls_dir *ls_readdir(ls_handle dir)
 	BOOL bRet;
 	DWORD dwErr;
 
-	if (!dir)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(dir, LS_DIR))
 		return NULL;
-	}
 
 	if (data->hFind == INVALID_HANDLE_VALUE)
 	{
@@ -392,11 +379,8 @@ struct ls_dir *ls_readdir(ls_handle dir)
 	struct stat st;
 	int rc;
 
-	if (!dir)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(dir, LS_DIR))
 		return NULL;
-	}
 
 	dirent = readdir(data->unidir);
 	if (!dirent)
@@ -525,11 +509,11 @@ size_t ls_snapshot_path(ls_handle ssh, char *path, size_t size)
 {
 	struct ls_snapshot *ss;
 
-	if (!ssh)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
 	if (!path != !size)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(ssh, LS_SNAPSHOT))
+		return -1;
 
 	ss = ssh;
 
@@ -547,11 +531,11 @@ size_t ls_snapshot_name(ls_handle ssh, char *name, size_t size)
 {
 	struct ls_snapshot *ss;
 
-	if (!ssh)
-		return ls_set_errno(LS_INVALID_ARGUMENT);
-
 	if (!name != !size)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	if (ls_type_check(ssh, LS_SNAPSHOT))
+		return -1;
 
 	ss = ssh;
 	assert(strlen(ss->name) == ss->name_len - 1);
@@ -570,8 +554,11 @@ int ls_snapshot_stat(ls_handle ssh, struct ls_stat *st)
 {
 	struct ls_snapshot *ss;
 
-	if (!ssh || !st)
+	if (!st)
 		return ls_set_errno(LS_INVALID_HANDLE);
+
+	if (ls_type_check(ssh, LS_SNAPSHOT))
+		return -1;
 
 	ss = ssh;
 	memcpy(st, &ss->st, sizeof(struct ls_stat));
@@ -583,17 +570,14 @@ ls_handle ls_snapshot_enumerate(ls_handle ssh, void **it)
 	struct ls_snapshot *ss;
 	uintptr_t i;
 
-	if (!ssh)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
-		return NULL;
-	}
-
 	if (!it)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
+
+	if (ls_type_check(ssh, LS_SNAPSHOT))
+		return NULL;
 
 	ss = ssh;
 	i = (uintptr_t)*it;
@@ -623,17 +607,14 @@ ls_handle ls_snapshot_lookup(ls_handle ssh, const char *path)
 	size_t i;
 	struct ls_snapshot *sub;
 
-	if (!ssh)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
-		return NULL;
-	}
-
 	if (!path)
 	{
 		ls_set_errno(LS_INVALID_ARGUMENT);
 		return NULL;
 	}
+
+	if (ls_type_check(ssh, LS_SNAPSHOT))
+		return NULL;
 
 	ss = ssh;
 
@@ -676,11 +657,8 @@ int ls_snapshot_refresh(ls_handle ssh, uint32_t max_depth, void(*cb)(const char 
 	struct ls_snapshot **tmp;
 	struct ls_snapshot **sub;
 
-	if (!ssh)
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
+	if (ls_type_check(ssh, LS_SNAPSHOT))
 		return -1;
-	}
 
 	ss = ssh;
 
