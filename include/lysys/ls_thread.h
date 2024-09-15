@@ -3,6 +3,12 @@
 
 #include "ls_defs.h"
 
+#define LS_THREAD_PRIORITY_LOWEST -2
+#define LS_THREAD_PRIORITY_BELOW_NORMAL -1
+#define LS_THREAD_PRIORITY_NORMAL 0
+#define LS_THREAD_PRIORITY_ABOVE_NORMAL 1
+#define LS_THREAD_PRIORITY_HIGHEST 2
+
 typedef int(*ls_thread_func_t)(void *up);
 
 //! \brief Create a thread.
@@ -21,6 +27,14 @@ ls_handle ls_thread_create(ls_thread_func_t func, void *up);
 //!
 //! \return The thread ID.
 unsigned long ls_thread_id(ls_handle th);
+
+//! \brief Set the scheduling priority of a thread.
+//! 
+//! \param th The thread handle.
+//! \param priority The new priority of the thread.
+//! 
+//! \return 0 if successful, or -1 if an error occurred.
+int ls_thread_set_priority(ls_handle th, int priority);
 
 //! \brief Query the ID of the calling thread.
 //!

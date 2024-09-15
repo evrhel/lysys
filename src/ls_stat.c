@@ -111,21 +111,9 @@ int ls_fstat(ls_handle file, struct ls_stat *st)
 	if (!st)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
-	{
-		st->size = 0;
-		st->ctime = 0;
-		st->atime = 0;
-		st->mtime = 0;
-		st->type = LS_FT_SOCK;
-		return 0;
-	}
-
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
-
-	
 
 	bRet = GetFileInformationByHandle(pf->hFile, &fi);
 	if (!bRet)

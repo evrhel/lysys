@@ -170,6 +170,48 @@ unsigned long ls_thread_id(ls_handle th)
 	return t->id;
 }
 
+int ls_thread_set_priority(ls_handle th, int priority)
+{
+#if LS_WINDOWS
+	struct ls_thread *t = th;
+	int nPriority;
+	HANDLE hThread;
+
+	if (!th)
+		return ls_set_errno(LS_INVALID_HANDLE);
+
+	switch (priority)
+	{
+	default:
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+	case LS_THREAD_PRIORITY_LOWEST:
+		nPriority = THREAD_PRIORITY_LOWEST;
+		break;
+	case LS_THREAD_PRIORITY_BELOW_NORMAL:
+		nPriority = THREAD_PRIORITY_BELOW_NORMAL;
+		break;
+	case LS_THREAD_PRIORITY_NORMAL:
+		nPriority = THREAD_PRIORITY_NORMAL;
+		break;
+	case LS_THREAD_PRIORITY_ABOVE_NORMAL:
+		nPriority = THREAD_PRIORITY_ABOVE_NORMAL;
+		break;
+	case LS_THREAD_PRIORITY_HIGHEST:
+		nPriority = THREAD_PRIORITY_HIGHEST;
+		break;
+	}
+
+	hThread = th == LS_SELF ? GetCurrentThread() : t->hThread;
+
+	if (!SetThreadPriority(hThread, nPriority))
+		return ls_set_errno_win32(GetLastError());
+
+	return 0;
+#else
+	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDOWS
+}
+
 unsigned long ls_thread_id_self(void)
 {
 #if LS_WINDOWS

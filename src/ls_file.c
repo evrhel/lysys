@@ -513,12 +513,6 @@ ls_handle ls_aio_open(ls_handle fh)
 	int rc;
 	int flags;
 
-	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
-	{
-		ls_set_errno(LS_INVALID_HANDLE);
-		return NULL;
-	}
-
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return NULL;

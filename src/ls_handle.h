@@ -21,7 +21,7 @@
 #define LS_AIO (13 | LS_WAITABLE)
 #define LS_PIPE (14 | LS_IO_STREAM)
 #define LS_FIBER 15
-#define LS_SOCKET (16 | LS_IO_STREAM)
+#define LS_SOCKET 16
 #define LS_SERVER 17
 
 // handle is statically allocated, will never have memory deallocated
