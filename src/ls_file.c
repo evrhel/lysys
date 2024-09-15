@@ -120,9 +120,6 @@ int64_t ls_seek(ls_handle file, int64_t offset, int origin)
 	LARGE_INTEGER liNewPointer;
 	int flags;
 
-	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
-		return ls_set_errno(LS_INVALID_HANDLE);
-
 	pf = ls_resolve_file(file, &flags);
 	if (!pf)
 		return -1;
@@ -164,9 +161,6 @@ size_t ls_read(ls_handle fh, void *buffer, size_t size)
 	DWORD dwRead, dwToRead;
 	size_t remaining;
 	int flags;
-
-	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
-		return ls_net_recv(fh, buffer, size);
 
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
@@ -250,9 +244,6 @@ size_t ls_write(ls_handle fh, const void *buffer, size_t size)
 	size_t remaining;
 	int flags;
 
-	if (LS_HANDLE_IS_TYPE(fh, LS_SOCKET))
-		return ls_net_send(fh, buffer, size);
-
 	pf = ls_resolve_file(fh, &flags);
 	if (!pf)
 		return -1;
@@ -330,9 +321,6 @@ int ls_flush(ls_handle file)
 	BOOL b;
 	HANDLE hFile;
 	int flags;
-
-	if (LS_HANDLE_IS_TYPE(file, LS_SOCKET))
-		return 0;
 
 	hFile = ls_resolve_file(file, &flags);
 	if (!hFile)
