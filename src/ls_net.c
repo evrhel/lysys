@@ -12,7 +12,11 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #else
-
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #endif // LS_WINDOWS
 
 #include "ls_native.h"
@@ -23,6 +27,7 @@ typedef struct ls_socket
 #if LS_WINDOWS
 	SOCKET socket;
 #else
+    int socket;
 #endif // LS_WINDOWS
 
 	char *host;
@@ -37,6 +42,7 @@ typedef struct ls_server
 #if LS_WINDOWS
 	SOCKET socket;
 #else
+    int socket;
 #endif // LS_WINDOWS
 } ls_server_t;
 
@@ -47,6 +53,8 @@ static void ls_socket_dtor(ls_socket_t *sock)
 	(void)shutdown(sock->socket, SD_BOTH);
 	(void)closesocket(sock->socket);
 #else
+    ls_free(sock->host);
+    close(sock->socket);
 #endif // LS_WINDOWS
 }
 
@@ -62,6 +70,7 @@ static void ls_server_dtor(ls_server_t *server)
 #if LS_WINDOWS
 	closesocket(server->socket);
 #else
+    close(server->socket);
 #endif // LS_WINDOWS
 }
 
@@ -98,9 +107,16 @@ static int ls_check_wsa()
 	return 0;
 }
 
-static int ls_parse_sockaddr(const char *host, unsigned short port, int af, PSOCKADDR_STORAGE pAddr)
+#endif // LS_WINDOWS
+
+#if !LS_WINDOWS
+typedef struct sockaddr_storage *PSOCKADDR_STORAGE;
+typedef struct addrinfo *PADDRINFOA;
+#endif // LS_WINDOWS
+
+static int ls_parse_sockaddr(const char *host, unsigned short port, int af, PSOCKADDR_STORAGE addr)
 {
-	PADDRINFOA pInfo, pPtr;
+	PADDRINFOA info, ptr;
 	char service[16];
 
 	if (!host)
@@ -120,12 +136,12 @@ static int ls_parse_sockaddr(const char *host, unsigned short port, int af, PSOC
 
 	snprintf(service, sizeof(service), "%hu", port);
 
-	if (getaddrinfo(host, service, NULL, &pInfo) != 0)
+    if (getaddrinfo(host, service, NULL, &info) != 0)
 		return ls_set_errno(LS_INVALID_ARGUMENT);
 
-	for (pPtr = pInfo; pPtr; pPtr = pPtr->ai_next)
+	for (ptr = info; ptr; ptr = ptr->ai_next)
 	{
-		switch (pPtr->ai_family)
+		switch (ptr->ai_family)
 		{
 		default:
 		case AF_UNSPEC:
@@ -135,22 +151,22 @@ static int ls_parse_sockaddr(const char *host, unsigned short port, int af, PSOC
 		case AF_APPLETALK:
 		case AF_NETBIOS:
 		case AF_INET6:
+#if LS_WINDOWS
 		case AF_IRDA:
 		case AF_BTH:
-			if (af != LS_AF_UNSPEC && pPtr->ai_family != af)
+#endif // LS_WINDOWS
+			if (af != LS_AF_UNSPEC && ptr->ai_family != af)
 				continue; // skip this address
 
-			memcpy(pAddr, pPtr->ai_addr, pPtr->ai_addrlen);
-			freeaddrinfo(pInfo);
+			memcpy(addr, ptr->ai_addr, ptr->ai_addrlen);
+			freeaddrinfo(info);
 			return 0;
 		}
 	}
 
-	freeaddrinfo(pInfo);
+	freeaddrinfo(info);
 	return ls_set_errno(LS_NOT_FOUND);
 }
-
-#endif // LS_WINDOWS
 
 ls_handle ls_net_connect(const char *host, unsigned short port, int type, int protocol, int addr_family)
 {
@@ -230,8 +246,75 @@ ls_handle ls_net_connect(const char *host, unsigned short port, int type, int pr
 
 	return sock;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+    ls_socket_t *sock;
+    struct sockaddr_storage addr;
+    int rc;
+    
+    switch (type)
+    {
+    default:
+        ls_set_errno(LS_INVALID_ARGUMENT);
+        return NULL;
+    case LS_NET_STREAM:
+        type = SOCK_STREAM;
+        break;
+    case LS_NET_DGRAM:
+        type = SOCK_DGRAM;
+        break;
+    }
+
+    switch (protocol)
+    {
+    default:
+        ls_set_errno(LS_INVALID_ARGUMENT);
+        return NULL;
+    case LS_NET_PROTO_TCP:
+        break;
+    case LS_NET_PROTO_UDP:
+        break;
+    }
+    
+    sock = ls_handle_create(&SocketClass, 0);
+    if (!sock)
+        return NULL;
+    
+    rc = ls_parse_sockaddr(host, port, addr_family, &addr);
+    if (rc == -1)
+    {
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    sock->socket = socket(addr.ss_family, type, 0);
+    if (sock->socket == -1)
+    {
+        ls_set_errno_errno(errno);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    if (connect(sock->socket, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+    {
+        ls_set_errno_errno(errno);
+        close(sock->socket);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    sock->host = ls_strdup(host);
+    if (!sock->host)
+    {
+        close(sock->socket);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    sock->port = port;
+
+    sock->can_recv = 1;
+    sock->can_send = 1;
+
+    return sock;
 #endif // LS_WINDOWS
 }
 
@@ -310,8 +393,74 @@ ls_handle ls_net_listen(const char *host, unsigned short port, int type, int pro
 
 	return sock;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+    ls_socket_t *sock;
+    struct sockaddr_storage addr;
+    int rc;
+    
+    switch (type)
+    {
+    default:
+        ls_set_errno(LS_INVALID_ARGUMENT);
+        return NULL;
+    case LS_NET_STREAM:
+        type = SOCK_STREAM;
+        break;
+    case LS_NET_DGRAM:
+        type = SOCK_DGRAM;
+        break;
+    }
+
+    switch (protocol)
+    {
+    default:
+        ls_set_errno(LS_INVALID_ARGUMENT);
+        return NULL;
+    case LS_NET_PROTO_TCP:
+        break;
+    case LS_NET_PROTO_UDP:
+        break;
+    }
+    
+    sock = ls_handle_create(&ServerClass, 0);
+    if (!sock)
+        return NULL;
+    
+    rc = ls_parse_sockaddr(host, port, addr_family, &addr);
+    if (rc == -1)
+    {
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    sock->socket = socket(addr.ss_family, type, 0);
+    if (sock->socket == -1)
+    {
+        ls_set_errno_errno(errno);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    rc = bind(sock->socket, (struct sockaddr *)&addr, sizeof(struct sockaddr));
+    if (rc != 0)
+    {
+        ls_set_errno_errno(errno);
+        close(sock->socket);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    rc = listen(sock->socket, backlog);
+    if (rc != 0)
+    {
+        ls_set_errno_errno(errno);
+        close(sock->socket);
+        ls_handle_dealloc(sock);
+        return NULL;
+    }
+    
+    sock->port = port;
+    
+    return sock;
 #endif // LS_WINDOWS
 }
 
@@ -376,8 +525,59 @@ ls_handle ls_net_accept(ls_handle sock)
 
 	return client;
 #else
-	ls_set_errno(LS_NOT_IMPLEMENTED);
-	return NULL;
+    ls_server_t *server = sock;
+    ls_socket_t *client;
+    uint8_t *addr_bytes;
+    
+    union
+    {
+        struct sockaddr_storage addr;
+        struct sockaddr_in addr4;
+        struct sockaddr_in6 addr6;
+    } u;
+    
+    struct sockaddr *addr = (struct sockaddr *)&u.addr;
+    socklen_t addr_len = sizeof(u.addr);
+    
+    if (ls_type_check(sock, LS_SERVER) != 0)
+        return NULL;
+    
+    client = ls_handle_create(&SocketClass, 0);
+    if (!client)
+        return NULL;
+    
+    client->socket = accept(server->socket, addr, &addr_len);
+    if (client->socket == -1)
+    {
+        ls_set_errno_errno(errno);
+        ls_handle_dealloc(client);
+        return NULL;
+    }
+    
+    switch (addr->sa_family)
+    {
+        default:
+            break;
+        case AF_INET:
+            client->port = ntohs(u.addr4.sin_port);
+            client->host = ls_malloc(INET_ADDRSTRLEN);
+            if (client->host)
+            {
+                addr_bytes = (uint8_t *)&u.addr4.sin_addr.s_addr;
+                snprintf(client->host, INET_ADDRSTRLEN, "%hhu.%hhu.%hu.%hhu",
+                    addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
+            }
+            break;
+        case AF_INET6:
+            client->port = ntohs(u.addr6.sin6_port);
+            client->host = NULL;
+            break;
+    }
+    
+    client->can_recv = 1;
+    client->can_send = 1;
+    
+    return client;
 #endif // LS_WINDOWS
 }
 
@@ -429,9 +629,50 @@ int ls_net_shutdown(ls_handle sock, int how)
 
 	return 0;
 #else
-	if (ls_type_check(sock, LS_SOCKET))
-		return -1;
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+    ls_socket_t *socket = sock;
+
+    if (ls_type_check(sock, LS_SOCKET))
+        return -1;
+    
+    switch (how)
+    {
+    default:
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+    case LS_NET_SHUT_RECV:
+        if (!socket->can_recv)
+            return 0;
+        how = SHUT_RD;
+        break;
+    case LS_NET_SHUT_SEND:
+        if (!socket->can_send)
+            return 0;
+        how = SHUT_WR;
+        break;
+    case LS_NET_SHUT_BOTH:
+        if (!socket->can_recv && !socket->can_send)
+            return 0;
+        how = SHUT_RDWR;
+        break;
+    }
+    
+    if (shutdown(socket->socket, how) != 0)
+        return ls_set_errno_errno(errno);
+
+    switch (how)
+    {
+    case SHUT_RD:
+        socket->can_recv = 0;
+        break;
+    case SHUT_WR:
+        socket->can_send = 0;
+        break;
+    case SHUT_RDWR:
+        socket->can_recv = 0;
+        socket->can_send = 0;
+        break;
+    }
+    
+    return 0;
 #endif // LS_WINDOWS
 }
 
@@ -491,9 +732,37 @@ size_t ls_net_recv(ls_handle sock, void *buffer, size_t size)
 
 	return size - remain;
 #else
-	if (ls_type_check(sock, LS_SOCKET))
-		return -1;
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+    ls_socket_t *socket = sock;
+    ssize_t bytes_read;
+    size_t remain;
+    char *buf;
+    
+    if (ls_type_check(sock, LS_SOCKET))
+        return -1;
+    
+    if (!socket->can_recv)
+        return ls_set_errno(LS_ACCESS_DENIED);
+    
+    remain = size;
+    buf = buffer;
+    
+    while (remain != 0)
+    {
+        bytes_read = read(socket->socket, buf, remain);
+        if (bytes_read == 0)
+            break;
+        else if (bytes_read == -1)
+        {
+            if (errno == EAGAIN)
+                continue;
+            return ls_set_errno(errno);
+        }
+        
+        remain -= bytes_read;
+        buf += bytes_read;
+    }
+    
+    return size - remain;
 #endif // LS_WINDOWS
 }
 
@@ -531,8 +800,36 @@ size_t ls_net_send(ls_handle sock, const void *buffer, size_t size)
 
 	return size - remain;
 #else
+    ls_socket_t *socket = sock;
+    ssize_t written;
+    size_t remain;
+    const char *buf;
+    
 	if (ls_type_check(sock, LS_SOCKET))
 		return -1;
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+    
+    if (!socket->can_send)
+        return ls_set_errno(LS_ACCESS_DENIED);
+    
+    remain = size;
+    buf = buffer;
+    
+    while (remain != 0)
+    {
+        written = write(socket->socket, buf, remain);
+        if (written == 0)
+            break;
+        else if (written == -1)
+        {
+            if (errno == EAGAIN)
+                continue;
+            return ls_set_errno(errno);
+        }
+        
+        remain -= written;
+        buf += written;
+    }
+    
+    return size - remain;
 #endif // LS_WINDOWS
 }
