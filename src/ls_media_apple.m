@@ -35,6 +35,44 @@ extern Boolean MRMediaRemoteSendCommand(int command, id userInfo);
 extern void MRMediaRemoteGetNowPlayingApplicationPID(dispatch_queue_t queue, MRMediaRemoteGetNowPlayingApplicationPIDCompletion completion);
 extern void MRMediaRemoteGetNowPlayingInfo(dispatch_queue_t queue, MRMediaRemoteGetNowPlayingInfoCompletion completion);
 
+#define cfstring_to_array(cfstring, array) CFStringGetBytes((cfstring), CFRangeMake(0, CFStringGetLength((cfstring))), kCFStringEncodingUTF8, 0, false, (UInt8 *)(array), sizeof((array)), NULL)
+
+static void populate_mediaplayer(struct mediaplayer *mp, CFDictionaryRef info)
+{
+    CFStringRef string;
+    CFNumberRef number;
+    
+    string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle);
+    if (string)
+        cfstring_to_array(string, mp->title);
+    else
+        mp->title[0] = 0;
+    
+    string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoArtist);
+    if (string)
+        cfstring_to_array(string, mp->artist);
+    else
+        mp->artist[0] = 0;
+    
+    string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoAlbum);
+    if (string)
+        cfstring_to_array(string, mp->album);
+    else
+        mp->album[0] = 0;
+    
+    number = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoElapsedTime);
+    if (number)
+        CFNumberGetValue(number, kCFNumberDoubleType, &mp->elapsed_time);
+    else
+        mp->elapsed_time = 0.0;
+    
+    number = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoDuration);
+    if (number)
+        CFNumberGetValue(number, kCFNumberDoubleType, &mp->duration);
+    else
+        mp->duration = 0.0;
+}
+
 int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
 {
     if (sema && ls_type_check(sema, LS_SEMAPHORE) != 0)
@@ -64,6 +102,8 @@ int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
             }
             
             mp->revision++;
+            
+            populate_mediaplayer(mp, info);
             
             if (sema)
                 ls_semaphore_signal(sema);

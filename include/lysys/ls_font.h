@@ -3,6 +3,8 @@
 
 #include "ls_defs.h"
 
+#if LS_FEATURE_FONT
+
 //! \brief Find the path to a system font.
 //! 
 //! Searches the system font directory for a font that best matches the
@@ -19,5 +21,7 @@
 //! If the font could not be found, -1 is returned and ls_errno is set
 //! to LS_NOT_FOUND.
 size_t ls_find_system_font(const char *name, char *path, size_t path_len);
+
+#endif // LS_FEATURE_FONT
 
 #endif // _LS_FONT_H_
