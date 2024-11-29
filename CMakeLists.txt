@@ -14,6 +14,7 @@ set(LYSYS_SOURCES
     ${src}/ls_font.c
     ${src}/ls_ioutils.c
     ${src}/ls_handle.c
+    ${src}/ls_media.c
     ${src}/ls_memory.c
     ${src}/ls_mmap.c
     ${src}/ls_native.c
@@ -34,7 +35,10 @@ set(LYSYS_SOURCES
 
 if (APPLE)
     list(APPEND LYSYS_SOURCES
+        ${src}/ls_media_apple.m
         ${src}/ls_pasteboard.m)
+
+    
 elseif (UNIX)
     include(${CMAKE_ROOT}/Modules/FindX11.cmake)
     list(APPEND LYSYS_SOURCES
@@ -58,6 +62,10 @@ if (WIN32)
 elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
     target_link_libraries(liblysys PUBLIC ${COCOA_LIBRARY})
+
+    target_link_libraries(liblysys PRIVATE "-F /System/Library/PrivateFrameworks")
+    target_link_libraries(liblysys PRIVATE "-framework MediaRemote")
+
     add_definitions(-D_XOPEN_SOURCE=500) # for ucontext.h
     add_definitions(-D_DARWIN_C_SOURCE) # _XOPEN_SOURCE excludes some functions/types
 elseif(UNIX)

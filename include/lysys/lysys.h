@@ -9,6 +9,7 @@
 #include "ls_file.h"
 #include "ls_font.h"
 #include "ls_ioutils.h"
+#include "ls_media.h"
 #include "ls_memory.h"
 #include "ls_mmap.h"
 #include "ls_net.h"

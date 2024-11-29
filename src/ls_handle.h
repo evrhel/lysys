@@ -13,18 +13,20 @@
 #define LS_DIR 3
 #define LS_LOCK 4
 #define LS_COND 5
-#define LS_THREAD (6 | LS_WAITABLE)
-#define LS_PROC (7 | LS_WAITABLE)
-#define LS_EVENT (8 | LS_WAITABLE)
-#define LS_WATCH (9 | LS_WAITABLE)
-#define LS_TLS 10
-#define LS_PERF_MONITOR 11
-#define LS_SNAPSHOT 12
-#define LS_AIO (13 | LS_WAITABLE)
-#define LS_PIPE (14 | LS_IO_STREAM)
-#define LS_FIBER 15
-#define LS_SOCKET 16
-#define LS_SERVER 17
+#define LS_SEMAPHORE (6 | LS_WAITABLE)
+#define LS_THREAD (7 | LS_WAITABLE)
+#define LS_PROC (8 | LS_WAITABLE)
+#define LS_EVENT (9 | LS_WAITABLE)
+#define LS_WATCH (10 | LS_WAITABLE)
+#define LS_TLS 11
+#define LS_PERF_MONITOR 12
+#define LS_SNAPSHOT 13
+#define LS_AIO (14 | LS_WAITABLE)
+#define LS_PIPE (15 | LS_IO_STREAM)
+#define LS_FIBER 16
+#define LS_SOCKET 17
+#define LS_SERVER 18
+#define LS_MEDIAPLAYER 19
 
 // handle is statically allocated, will never have memory deallocated
 // or destructor called

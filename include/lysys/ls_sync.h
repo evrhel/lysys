@@ -93,4 +93,8 @@ void ls_cond_signal(ls_handle cond);
 //! \param [in] cond The condition variable to broadcast.
 void ls_cond_broadcast(ls_handle cond);
 
-#endif
+ls_handle ls_semaphore_create(int count);
+
+int ls_semaphore_signal(ls_handle sema);
+
+#endif // _LS_SYNC_H_
