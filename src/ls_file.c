@@ -91,7 +91,7 @@ ls_handle ls_open(const char *path, int access, int share, int create)
 		return NULL;
 	}
 
-	pfd = ls_handle_create(&FileClass, 0);
+	pfd = ls_handle_create(&FileClass, access);
 	if (!pfd)
 		return NULL;
 

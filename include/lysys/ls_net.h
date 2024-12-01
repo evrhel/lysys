@@ -3,8 +3,6 @@
 
 #include "ls_defs.h"
 
-#if LS_FEATURE_NET
-
 #define LS_NET_STREAM 1
 #define LS_NET_DGRAM 2
 
@@ -59,7 +57,5 @@ unsigned short ls_net_getport(ls_handle sock);
 size_t ls_net_recv(ls_handle sock, void *buffer, size_t size);
 
 size_t ls_net_send(ls_handle sock, const void *buffer, size_t size);
-
-#endif // LS_FEATURE_NET
 
 #endif // _LS_NET_H_

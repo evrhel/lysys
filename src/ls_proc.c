@@ -17,6 +17,10 @@
 #include <signal.h>
 #include <stdio.h>
 
+#if LS_DARWIN
+#include <libproc.h>
+#endif // LS_DARWIN
+
 struct ls_proc
 {
 #if LS_WINDOWS
@@ -698,6 +702,39 @@ ls_handle ls_proc_open(unsigned long pid)
 	ph->path_len = ls_image_name(hProcess, ph->path, sizeof(ph->path), &ph->name);
 
 	return ph;
+#elif LS_DARWIN
+    struct ls_proc *proc;
+    int rc;
+    char buf[PROC_PIDPATHINFO_MAXSIZE];
+    
+    proc = ls_handle_create(&ProcClass, 0);
+    if (!proc)
+        return NULL;
+    
+    rc = proc_pidpath((int)pid, buf, sizeof(buf));
+    if (rc <= 0)
+    {
+        ls_set_errno_errno(errno);
+        ls_handle_dealloc(proc);
+        return NULL;
+    }
+    
+    proc->path_len = strlen(buf);
+    proc->path = ls_malloc(proc->path_len + 1);
+    if (!proc->path)
+    {
+        ls_handle_dealloc(proc);
+        return NULL;
+    }
+    
+    memcpy(proc->path, buf, proc->path_len);
+    proc->path[proc->path_len] = 0; // null terminate
+    
+    proc->name = strrchr(proc->path, "/");
+    if (proc->name)
+        proc->name++;
+    
+    return proc;
 #else
 	struct ls_proc *proc;
 	struct stat st;
@@ -894,12 +931,34 @@ int ls_proc_exit_code(ls_handle ph, int *exit_code)
 
 static size_t ls_get_self_path(char *path, size_t size)
 {
+#if LS_WINDOWS
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#elif LS_DARWIN
+    int rc;
+    
+    rc = proc_pidpath(getpid(), path, (uint32_t)size);
+    if (rc == -1)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    return rc;
+#else
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDOWS
 }
 
 static size_t ls_proc_self_name(char *name, size_t size)
 {
-	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#if LS_WINDOWS
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#elif LS_DARWIN
+    int rc;
+    
+    rc = proc_name(getpid(), name, (uint32_t)size);
+    if (rc == -1)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    return rc;
+#else
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDOWS
 }
 
 size_t ls_proc_path(ls_handle ph, char *path, size_t size)

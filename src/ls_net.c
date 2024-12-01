@@ -393,7 +393,7 @@ ls_handle ls_net_listen(const char *host, unsigned short port, int type, int pro
 
 	return sock;
 #else
-    ls_socket_t *sock;
+    ls_server_t *server;
     struct sockaddr_storage addr;
     int rc;
     
@@ -421,46 +421,46 @@ ls_handle ls_net_listen(const char *host, unsigned short port, int type, int pro
         break;
     }
     
-    sock = ls_handle_create(&ServerClass, 0);
-    if (!sock)
+    server = ls_handle_create(&ServerClass, 0);
+    if (!server)
         return NULL;
     
     rc = ls_parse_sockaddr(host, port, addr_family, &addr);
     if (rc == -1)
     {
-        ls_handle_dealloc(sock);
+        ls_handle_dealloc(server);
         return NULL;
     }
     
-    sock->socket = socket(addr.ss_family, type, 0);
-    if (sock->socket == -1)
+    server->socket = socket(addr.ss_family, type, 0);
+    if (server->socket == -1)
     {
         ls_set_errno_errno(errno);
-        ls_handle_dealloc(sock);
+        ls_handle_dealloc(server);
         return NULL;
     }
     
-    rc = bind(sock->socket, (struct sockaddr *)&addr, sizeof(struct sockaddr));
+    rc = bind(server->socket, (struct sockaddr *)&addr, sizeof(struct sockaddr));
     if (rc != 0)
     {
         ls_set_errno_errno(errno);
-        close(sock->socket);
-        ls_handle_dealloc(sock);
+        close(server->socket);
+        ls_handle_dealloc(server);
         return NULL;
     }
     
-    rc = listen(sock->socket, backlog);
+    rc = listen(server->socket, backlog);
     if (rc != 0)
     {
         ls_set_errno_errno(errno);
-        close(sock->socket);
-        ls_handle_dealloc(sock);
+        close(server->socket);
+        ls_handle_dealloc(server);
         return NULL;
     }
     
-    sock->port = port;
+    server->port = port;
     
-    return sock;
+    return server;
 #endif // LS_WINDOWS
 }
 
@@ -556,22 +556,22 @@ ls_handle ls_net_accept(ls_handle sock)
     
     switch (addr->sa_family)
     {
-        default:
-            break;
-        case AF_INET:
-            client->port = ntohs(u.addr4.sin_port);
-            client->host = ls_malloc(INET_ADDRSTRLEN);
-            if (client->host)
-            {
-                addr_bytes = (uint8_t *)&u.addr4.sin_addr.s_addr;
-                snprintf(client->host, INET_ADDRSTRLEN, "%hhu.%hhu.%hu.%hhu",
-                    addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
-            }
-            break;
-        case AF_INET6:
-            client->port = ntohs(u.addr6.sin6_port);
-            client->host = NULL;
-            break;
+    default:
+        break;
+    case AF_INET:
+        client->port = ntohs(u.addr4.sin_port);
+        client->host = ls_malloc(INET_ADDRSTRLEN);
+        if (client->host)
+        {
+            addr_bytes = (uint8_t *)&u.addr4.sin_addr.s_addr;
+            snprintf(client->host, INET_ADDRSTRLEN, "%hhu.%hhu.%hu.%hhu",
+                addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
+        }
+        break;
+    case AF_INET6:
+        client->port = ntohs(u.addr6.sin6_port);
+        client->host = NULL;
+        break;
     }
     
     client->can_recv = 1;

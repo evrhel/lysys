@@ -42,35 +42,31 @@ static void populate_mediaplayer(struct mediaplayer *mp, CFDictionaryRef info)
     CFStringRef string;
     CFNumberRef number;
     
+    memset(mp->title, 0, sizeof(mp->title));
+    memset(mp->artist, 0, sizeof(mp->artist));
+    memset(mp->album, 0, sizeof(mp->album));
+    mp->elapsed_time = 0.0;
+    mp->duration = 0.0;
+    
     string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle);
     if (string)
         cfstring_to_array(string, mp->title);
-    else
-        mp->title[0] = 0;
     
     string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoArtist);
     if (string)
         cfstring_to_array(string, mp->artist);
-    else
-        mp->artist[0] = 0;
     
     string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoAlbum);
     if (string)
         cfstring_to_array(string, mp->album);
-    else
-        mp->album[0] = 0;
     
     number = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoElapsedTime);
     if (number)
         CFNumberGetValue(number, kCFNumberDoubleType, &mp->elapsed_time);
-    else
-        mp->elapsed_time = 0.0;
     
     number = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoDuration);
     if (number)
         CFNumberGetValue(number, kCFNumberDoubleType, &mp->duration);
-    else
-        mp->duration = 0.0;
 }
 
 int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
