@@ -2,6 +2,7 @@
 #include <Foundation/Foundation.h>
 #include <AppKit/AppKit.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <CoreAudio/CoreAudio.h>
 
 #include <lysys/ls_media.h>
 #include <lysys/ls_core.h>
@@ -109,6 +110,140 @@ int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
     return 0;
 }
 
+static BOOL is_muted(void)
+{
+    AudioObjectPropertyAddress get_default_output_device_property_addr = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    
+    AudioObjectPropertyAddress mute_property_addr = {
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyScopeOutput,
+        0
+    };
+    
+    AudioDeviceID default_device_id;
+    UInt32 deviceid_size = sizeof(default_device_id);
+    
+    UInt32 muted;
+    UInt32 muteddata_size = sizeof(muted);
+    
+    OSStatus result;
+    
+    result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                        &get_default_output_device_property_addr,
+                                        0, NULL,
+                                        &deviceid_size, &default_device_id);
+    if (result != kAudioHardwareNoError)
+    {
+        ls_set_errno(LS_UNKNOWN_ERROR);
+        return FALSE;
+    }
+    
+    result = AudioObjectGetPropertyData(default_device_id,
+                                        &mute_property_addr,
+                                        0, NULL,
+                                        &muteddata_size, &muted);
+    if (result != kAudioHardwareNoError)
+    {
+        ls_set_errno(LS_UNKNOWN_ERROR);
+        return FALSE;
+    }
+    
+    ls_set_errno(LS_SUCCESS);
+    return muted;
+}
+
+static int set_muted(BOOL muted)
+{
+    AudioObjectPropertyAddress get_default_output_device_property_addr = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    
+    AudioObjectPropertyAddress mute_property_addr = {
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyScopeOutput,
+        0
+    };
+    
+    AudioDeviceID default_device_id;
+    UInt32 deviceid_size = sizeof(default_device_id);
+    
+    UInt32 muteddata = muted;
+    
+    OSStatus result;
+    
+    result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                        &get_default_output_device_property_addr,
+                                        0, NULL,
+                                        &deviceid_size, &default_device_id);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    result = AudioObjectSetPropertyData(default_device_id,
+                                        &mute_property_addr,
+                                        0, NULL,
+                                        sizeof(muteddata), &muteddata);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    ls_set_errno(LS_SUCCESS);
+    return 0;
+}
+
+static int toggle_mute(void)
+{
+    AudioObjectPropertyAddress get_default_output_device_property_addr = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    
+    AudioObjectPropertyAddress mute_property_addr = {
+        kAudioDevicePropertyMute,
+        kAudioDevicePropertyScopeOutput,
+        0
+    };
+    
+    AudioDeviceID default_device_id;
+    UInt32 deviceid_size = sizeof(default_device_id);
+    
+    UInt32 muted;
+    UInt32 muteddata_size = sizeof(muted);
+    
+    OSStatus result;
+    
+    result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                        &get_default_output_device_property_addr,
+                                        0, NULL,
+                                        &deviceid_size, &default_device_id);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    result = AudioObjectGetPropertyData(default_device_id,
+                                        &mute_property_addr,
+                                        0, NULL,
+                                        &muteddata_size, &muted);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    muted = !muted;
+    
+    result = AudioObjectSetPropertyData(default_device_id,
+                                        &mute_property_addr,
+                                        0, NULL,
+                                        sizeof(muted), &muted);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    ls_set_errno(LS_SUCCESS);
+    return 0;
+}
+
 int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname)
 {
     Boolean r;
@@ -138,6 +273,19 @@ int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname)
     case LS_MEDIA_COMMAND_SKIP_FORWARD:
         r = MRMediaRemoteSendCommand(kMRSkipFifteenSeconds, 0);
         break;
+    case LS_MEDIA_COMMAND_MUTE:
+        return set_muted(TRUE);
+    case LS_MEDIA_COMMAND_UNMUTE:
+        return set_muted(FALSE);
+    case LS_MEDIA_COMMAND_MUTEUNMUTE:
+        if (!is_muted())
+        {
+            if (_ls_errno)
+                return -1;
+            return set_muted(TRUE);
+        }
+            
+        return set_muted(FALSE);
     }
     
     if (!r)
@@ -225,3 +373,102 @@ int ls_media_player_publish_APPLE(struct mediaplayer *mp, ls_handle sema)
 {
     return ls_set_errno(LS_NOT_IMPLEMENTED);
 }
+
+int ls_media_player_setvolume_APPLE(struct mediaplayer *mp, double volume)
+{
+    AudioObjectPropertyAddress get_default_output_device_property_addr = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    
+    AudioObjectPropertyAddress volume1_property_addr = {
+        kAudioDevicePropertyVolumeScalar,
+        kAudioDevicePropertyScopeOutput,
+        1
+    };
+    
+    AudioObjectPropertyAddress volume2_property_addr = {
+        kAudioDevicePropertyVolumeScalar,
+        kAudioDevicePropertyScopeOutput,
+        2
+    };
+    
+    AudioDeviceID default_device_id;
+    UInt32 deviceid_size = sizeof(default_device_id);
+    
+    Float32 volumedata;
+    
+    OSStatus result;
+    
+    result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                        &get_default_output_device_property_addr,
+                                        0, NULL,
+                                        &deviceid_size, &default_device_id);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    volumedata = (Float32)volume;
+    
+    result = AudioObjectSetPropertyData(default_device_id,
+                                        &volume1_property_addr,
+                                        0, NULL,
+                                        sizeof(volumedata), &volumedata);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    result = AudioObjectSetPropertyData(default_device_id,
+                                        &volume2_property_addr,
+                                        0, NULL,
+                                        sizeof(volumedata), &volumedata);
+    if (result != kAudioHardwareNoError)
+        return ls_set_errno(LS_UNKNOWN_ERROR);
+    
+    return 0;
+}
+
+double ls_media_player_getvolume_APPLE(struct mediaplayer *mp)
+{
+    AudioObjectPropertyAddress get_default_output_device_property_addr = {
+        kAudioHardwarePropertyDefaultOutputDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMaster
+    };
+    
+    AudioObjectPropertyAddress volume_property_addr = {
+        kAudioDevicePropertyVolumeScalar,
+        kAudioDevicePropertyScopeOutput,
+        0
+    };
+    
+    AudioDeviceID default_device_id;
+    UInt32 deviceid_size = sizeof(default_device_id);
+    
+    Float32 volumedata;
+    UInt32 volumedata_size = sizeof(volumedata);
+    
+    OSStatus result;
+    
+    result = AudioObjectGetPropertyData(kAudioObjectSystemObject,
+                                        &get_default_output_device_property_addr,
+                                        0, NULL,
+                                        &deviceid_size, &default_device_id);
+    if (result != kAudioHardwareNoError)
+    {
+        ls_set_errno(LS_UNKNOWN_ERROR);
+        return 0.0;
+    }
+    
+    result = AudioObjectGetPropertyData(default_device_id,
+                                        &volume_property_addr,
+                                        0, NULL,
+                                        &volumedata_size, &volumedata);
+    if (result != kAudioHardwareNoError)
+    {
+        ls_set_errno(LS_UNKNOWN_ERROR);
+        return 0.0;
+    }
+    
+    return (double)volumedata;
+}
+

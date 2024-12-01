@@ -17,6 +17,9 @@
 #define LS_MEDIA_COMMAND_NEXT 4
 #define LS_MEDIA_COMMAND_SKIP_BACK 5
 #define LS_MEDIA_COMMAND_SKIP_FORWARD 6
+#define LS_MEDIA_COMMAND_MUTE 7
+#define LS_MEDIA_COMMAND_UNMUTE 8
+#define LS_MEDIA_COMMAND_MUTEUNMUTE 9
 
 struct ls_image
 {
@@ -44,5 +47,8 @@ int ls_media_player_setdouble(ls_handle mp, int pname, double val);
 int ls_media_player_setartwork(ls_handle mp, const void *data, size_t data_len);
 
 int ls_media_player_publish(ls_handle mp, ls_handle sema);
+
+int ls_media_player_setvolume(ls_handle mp, double volume);
+double ls_media_player_getvolume(ls_handle mp);
 
 #endif // _LS_MEDIA_H_

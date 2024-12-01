@@ -11,6 +11,8 @@ int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname);
 pid_t ls_media_player_getpid_APPLE(struct mediaplayer *mp);
 int ls_media_player_cache_artwork_APPLE(struct mediaplayer *mp);
 int ls_media_player_publish_APPLE(struct mediaplayer *mp, ls_handle sema);
+int ls_media_player_setvolume_APPLE(struct mediaplayer *mp, double volume);
+double ls_media_player_getvolume_APPLE(struct mediaplayer *mp);
 #endif // LS_DARWIN
 
 static void ls_media_player_dtor(struct mediaplayer *mp)
@@ -253,6 +255,36 @@ int ls_media_player_publish(ls_handle mp, ls_handle sema)
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
     return ls_media_player_publish_APPLE(mp, sema);
+#else
+    return ls_set_errno(LS_NOT_SUPPORTED);
+#endif // LS_WINDOWS
+}
+
+int ls_media_player_setvolume(ls_handle mp, double volume)
+{
+#if LS_WINDOWS
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#elif LS_DARWIN
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+    
+    if (volume < 0.0) volume = 0.0;
+    else if (volume > 1.0) volume = 1.0;
+    
+    return ls_media_player_setvolume_APPLE(mp, volume);
+#else
+    return ls_set_errno(LS_NOT_SUPPORTED);
+#endif // LS_WINDOWS
+}
+
+double ls_media_player_getvolume(ls_handle mp)
+{
+#if LS_WINDOWS
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#elif LS_DARWIN
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return 0.0;
+    return ls_media_player_getvolume_APPLE(mp);
 #else
     return ls_set_errno(LS_NOT_SUPPORTED);
 #endif // LS_WINDOWS

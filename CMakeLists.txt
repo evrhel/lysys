@@ -166,6 +166,9 @@ elseif(APPLE)
     endif()
 
     if(LYSYS_FEATURE_MEDIA_CONTROLS)
+        find_library(COREAUDIO_LIBRARY CoreAudio)
+        target_link_libraries(liblysys PRIVATE ${COREAUDIO_LIBRARY})
+    
         target_link_libraries(liblysys PRIVATE "-F /System/Library/PrivateFrameworks")
         target_link_libraries(liblysys PRIVATE "-framework MediaRemote")
     endif()
