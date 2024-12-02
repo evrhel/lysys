@@ -67,7 +67,10 @@ ls_handle ls_media_player_open(void)
 
     hr = RoInitialize(1); // RO_INIT_MULTITHREADED
     if (FAILED(hr))
-        return ls_set_errno_hresult(hr);
+    {
+        ls_set_errno_hresult(hr);
+        return NULL;
+    }
 
     return mp;
 #elif LS_DARWIN
@@ -232,13 +235,12 @@ int ls_media_player_setdouble(ls_handle mp, int pname, double val)
 {
     struct mediaplayer *media_player = mp;
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
-        return 0.0;
+        return -1;
     
     switch (pname)
     {
     default:
-        ls_set_errno(LS_NOT_FOUND);
-        return 0.0;
+        return ls_set_errno(LS_NOT_FOUND);
     case LS_MEDIA_PROPERTY_DURATION:
         media_player->duration = val;
         return 0;
