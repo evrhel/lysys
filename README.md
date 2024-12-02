@@ -1,6 +1,6 @@
 # lysys
 
-[![build](https://github.com/evrhel/lysys/actions/workflows/build.yaml/badge.svg)](https://github.com/evrhel/lysys/actions/workflows/build.yaml)
+[![build](https://github.com/evrhel/lysys/actions/workflows/build.yaml/badge.svg?branch=master)](https://github.com/evrhel/lysys/actions/workflows/build.yaml)
 
 lysys is a cross-platform C API to interact with functionality of the underlying operating system not provided by the C standard library. It is not finished yet, but some features are implemented. The following platforms are supported or planned to be supported:
 
