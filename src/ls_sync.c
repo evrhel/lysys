@@ -42,9 +42,11 @@ static const struct ls_class ConditionClass = {
 struct semaphore
 {
 #if LS_WINDOWS
+    int placeholder;
 #elif LS_DARWIN
     semaphore_t sema;
 #else
+    int placeholder;
 #endif // LS_WINDOWS
 };
 

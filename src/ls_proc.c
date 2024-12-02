@@ -730,7 +730,7 @@ ls_handle ls_proc_open(unsigned long pid)
     memcpy(proc->path, buf, proc->path_len);
     proc->path[proc->path_len] = 0; // null terminate
     
-    proc->name = strrchr(proc->path, "/");
+    proc->name = strrchr(proc->path, '/');
     if (proc->name)
         proc->name++;
     

@@ -133,6 +133,8 @@ if (WIN32)
     target_link_libraries(liblysys PRIVATE shlwapi)
     target_link_libraries(liblysys PRIVATE userenv)
 
+    add_compile_definitions(-D_CRT_SECURE_NO_WARNINGS=1)
+
     if(LYSYS_FEATURE_NET)
         target_link_libraries(liblysys PRIVATE Ws2_32)
     endif()

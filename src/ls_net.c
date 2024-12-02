@@ -147,9 +147,22 @@ static int ls_parse_sockaddr(const char *host, unsigned short port, int af, PSOC
 		case AF_UNSPEC:
 			break;
 		case AF_INET:
+#ifdef AF_IPX
 		case AF_IPX:
+#endif // AF_IPX
+                
+#ifdef AF_APPLETALK
 		case AF_APPLETALK:
+#endif // AF_APPLETALK
+                
+#ifdef AF_NETBIOS
 		case AF_NETBIOS:
+#endif // AF_NETBIOS
+                
+#ifdef AF_NETLINK
+        case AF_NETLINK:
+#endif // AF_NETLINK
+                
 		case AF_INET6:
 #if LS_WINDOWS
 		case AF_IRDA:
