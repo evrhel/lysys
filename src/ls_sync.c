@@ -42,7 +42,7 @@ static const struct ls_class ConditionClass = {
 struct semaphore
 {
 #if LS_WINDOWS
-    int placeholder;
+    HANDLE hSemaphore;
 #elif LS_DARWIN
     semaphore_t sema;
 #else
@@ -53,6 +53,7 @@ struct semaphore
 static void ls_semaphore_dtor(struct semaphore *sema)
 {
 #if LS_WINDOWS
+    CloseHandle(sema->hSemaphore);
 #elif LS_DARWIN
     semaphore_destroy(mach_task_self(), sema->sema);
 #else
@@ -62,7 +63,17 @@ static void ls_semaphore_dtor(struct semaphore *sema)
 static int ls_semaphore_wait(struct semaphore *sema, unsigned long timeout)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    DWORD dwResult;
+
+    dwResult = WaitForSingleObject(sema->hSemaphore, timeout);
+
+    if (dwResult == WAIT_FAILED)
+        return ls_set_errno_win32(GetLastError());
+
+    if (dwResult == WAIT_TIMEOUT)
+        return 1;
+
+    return 0;
 #elif LS_DARWIN
     kern_return_t kr;
     mach_timespec_t deadline;
@@ -182,8 +193,21 @@ void ls_cond_broadcast(ls_handle cond)
 ls_handle ls_semaphore_create(int count)
 {
 #if LS_WINDOWS
-    ls_set_errno(LS_NOT_IMPLEMENTED);
-    return NULL;
+    struct semaphore *sema;
+
+    sema = ls_handle_create(&SemaphoreClass, 0);
+    if (!sema)
+        return NULL;
+
+    sema->hSemaphore = CreateSemaphoreA(NULL, count, LONG_MAX, NULL);
+    if (!sema->hSemaphore)
+    {
+        ls_set_errno_win32(GetLastError());
+        ls_handle_dealloc(sema);
+        return NULL;
+    }
+
+    return sema;
 #elif LS_DARWIN
     struct semaphore *sema;
     kern_return_t kr;
@@ -210,7 +234,16 @@ ls_handle ls_semaphore_create(int count)
 int ls_semaphore_signal(ls_handle sema)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    struct semaphore *semaphore = sema;
+    BOOL b;
+
+    if (ls_type_check(sema, LS_SEMAPHORE) != 0)
+        return -1;
+
+    b = ReleaseSemaphore(semaphore->hSemaphore, 1, NULL);
+    if (!b)
+        return ls_set_errno_win32(GetLastError());
+    return 0;
 #elif LS_DARWIN
     struct semaphore *semaphore = sema;
     kern_return_t kr;

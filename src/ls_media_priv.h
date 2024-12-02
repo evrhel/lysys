@@ -3,7 +3,9 @@
 
 #include <lysys/ls_media.h>
 
-#if LS_DARWIN
+#if LS_WINDOWS
+#include "ls_native.h"
+#elif LS_DARWIN
 #include <CoreFoundation/CoreFoundation.h>
 #endif // LS_DARWIN
 

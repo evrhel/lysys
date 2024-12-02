@@ -5,7 +5,21 @@
 #include "ls_native.h"
 #include "ls_media_priv.h"
 
-#if LS_DARWIN
+#if LS_WINDOWS
+__declspec(dllimport)
+HRESULT WINAPI RoInitialize(_In_ int initType);
+
+__declspec(dllimport)
+void WINAPI RoUninitialize();
+
+int ls_media_player_poll_WIN32(struct mediaplayer *mp, ls_handle sema);
+int ls_media_player_send_command_WIN32(struct mediaplayer *mp, int cname);
+DWORD ls_media_player_getpid_WIN32(struct mediaplayer *mp);
+int ls_media_player_cache_artwork_WIN32(struct mediaplayer *mp);
+int ls_media_player_publish_WIN32(struct mediaplayer *mp, ls_handle sema);
+int ls_media_player_setvolume_WIN32(struct mediaplayer *mp, double volume);
+double ls_media_player_getvolume_WIN32(struct mediaplayer *mp);
+#elif LS_DARWIN
 int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema);
 int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname);
 pid_t ls_media_player_getpid_APPLE(struct mediaplayer *mp);
@@ -18,6 +32,7 @@ double ls_media_player_getvolume_APPLE(struct mediaplayer *mp);
 static void ls_media_player_dtor(struct mediaplayer *mp)
 {
 #if LS_WINDOWS
+    RoUninitialize();
 #elif LS_DARWIN
     if (mp->artwork_id)
         CFRelease(mp->artwork_id);
@@ -37,17 +52,23 @@ static const struct ls_class MediaPlayerClass = {
     .type = LS_MEDIAPLAYER,
     .cb = sizeof(struct mediaplayer),
     .dtor = (ls_dtor_t)&ls_media_player_dtor,
-    .wait = NULL};
+    .wait = NULL
+};
 
 ls_handle ls_media_player_open(void)
 {
 #if LS_WINDOWS
     struct mediaplayer *mp;
+    HRESULT hr;
     
     mp = ls_handle_create(&MediaPlayerClass, 0);
     if (!mp)
         return NULL;
-    
+
+    hr = RoInitialize(1); // RO_INIT_MULTITHREADED
+    if (FAILED(hr))
+        return ls_set_errno_hresult(hr);
+
     return mp;
 #elif LS_DARWIN
     struct mediaplayer *mp;
@@ -74,7 +95,9 @@ ls_handle ls_media_player_open(void)
 int ls_media_player_poll(ls_handle mp, ls_handle sema)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+    return ls_media_player_poll_WIN32(mp, sema);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
@@ -105,7 +128,9 @@ unsigned long ls_media_player_getpid(ls_handle mp)
 int ls_media_player_send_command(ls_handle mp, int cname)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+    return ls_media_player_send_command_WIN32(mp, cname);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
@@ -163,6 +188,8 @@ int ls_media_player_getartwork(ls_handle mp, struct ls_image *artwork)
     if (media_player->art_out_of_date)
     {
 #if LS_WINDOWS
+        if (ls_media_player_cache_artwork_WIN32(mp) != 0)
+            return -1;
 #elif LS_DARWIN
         if (ls_media_player_cache_artwork_APPLE(mp) != 0)
             return -1;
@@ -250,7 +277,9 @@ int ls_media_player_setartwork(ls_handle mp, const void *data, size_t data_len)
 int ls_media_player_publish(ls_handle mp, ls_handle sema)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+    return ls_media_player_publish_WIN32(mp, sema);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
@@ -263,7 +292,13 @@ int ls_media_player_publish(ls_handle mp, ls_handle sema)
 int ls_media_player_setvolume(ls_handle mp, double volume)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+
+    if (volume < 0.0) volume = 0.0;
+    else if (volume > 1.0) volume = 1.0;
+
+    return ls_media_player_setvolume_WIN32(mp, volume);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
@@ -280,7 +315,9 @@ int ls_media_player_setvolume(ls_handle mp, double volume)
 double ls_media_player_getvolume(ls_handle mp)
 {
 #if LS_WINDOWS
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return 0.0;
+    return ls_media_player_getvolume_WIN32(mp);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return 0.0;

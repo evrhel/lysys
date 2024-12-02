@@ -110,7 +110,9 @@ endif()
 if(LYSYS_FEATURE_MEDIA_CONTROLS)
     list(APPEND LYSYS_SOURCES ${src}/ls_media.c)
 
-    if(APPLE)
+    if (WIN32)
+        list(APPEND LYSYS_SOURCES ${src}/ls_media_win32.cpp)
+    elseif(APPLE)
         list(APPEND LYSYS_SOURCES ${src}/ls_media_apple.m)
     endif()
     
@@ -118,9 +120,9 @@ if(LYSYS_FEATURE_MEDIA_CONTROLS)
 endif()
 
 if(LYSYS_SHARED)
-    add_library(liblysys STATIC ${LYSYS_SOURCES})
-else()
     add_library(liblysys SHARED ${LYSYS_SOURCES})
+else()
+    add_library(liblysys STATIC ${LYSYS_SOURCES})
 endif()
 
 set_property(TARGET liblysys PROPERTY C_STANDARD 99)
@@ -133,14 +135,16 @@ if (WIN32)
     target_link_libraries(liblysys PRIVATE shlwapi)
     target_link_libraries(liblysys PRIVATE userenv)
 
-    add_compile_definitions(-D_CRT_SECURE_NO_WARNINGS=1)
-
     if(LYSYS_FEATURE_NET)
         target_link_libraries(liblysys PRIVATE Ws2_32)
     endif()
 
     if(LYSYS_FEATURE_PROFILE)
         target_link_libraries(liblysys PRIVATE Pdh)
+    endif()
+
+    if(LYSYS_FEATURE_MEDIA_CONTROLS)
+        target_link_libraries(liblysys PRIVATE WindowsApp)
     endif()
 
     if(LYSYS_FEATURE_RANDOM)

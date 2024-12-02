@@ -270,7 +270,7 @@ int win32_to_error(DWORD err)
 {
 	switch (err)
 	{
-	default: hresult_to_error(HRESULT_FROM_WIN32(err));
+	default: return LS_UNKNOWN_ERROR;
 	case 0: return 0;
 	case ERROR_INVALID_FUNCTION: return LS_INVALID_ARGUMENT;
 	case ERROR_FILE_NOT_FOUND: return LS_FILE_NOT_FOUND;
