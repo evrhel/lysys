@@ -3,8 +3,6 @@
 
 #include "ls_defs.h"
 
-#if LS_FEATURE_CLIPBOARD
-
 //! \brief Text clipboard format.
 #define LS_CF_TEXT 1
 
@@ -67,7 +65,5 @@ int ls_clear_clipboard_data(void);
 //! the data, in bytes, if data is NULL. Returns 0 if the clipboard
 //! does not contain data of the specified format, or -1 on failure.
 size_t ls_get_clipboard_data(intptr_t fmt, void *data, size_t cb);
-
-#endif // LS_FEATURE_CLIPBOARD
 
 #endif // _LS_CLIPBOARD_H_

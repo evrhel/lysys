@@ -83,28 +83,22 @@ if(LYSYS_FEATURE_CLIPBOARD)
         include(${CMAKE_ROOT}/Modules/FindX11.cmake)
         list(APPEND LYSYS_SOURCES ${src}/ls_clipboard_x11.c)
     endif()
-    
-    add_definitions(-DLS_FEATURE_CLIPBOARD=1)
 endif()
 
 if(LYSYS_FEATURE_RANDOM)
     list(APPEND LYSYS_SOURCES ${src}/ls_random.c)
-    add_definitions(-DLS_FEATURE_RANDOM=1)
 endif()
 
 if(LYSYS_FEATURE_FILE_WATCH)
     list(APPEND LYSYS_SOURCES ${src}/ls_watch.c)
-    add_definitions(-DLS_FEATURE_FILE_WATCH=1)
 endif()
 
 if(LYSYS_FEATURE_FONT)
     list(APPEND LYSYS_SOURCES ${src}/ls_font.c)
-    add_definitions(-DLS_FEATURE_FONT=1)
 endif()
 
 if(LYSYS_FEATURE_NET)
     list(APPEND LYSYS_SOURCES ${src}/ls_net.c)
-    add_definitions(-DLS_FEATURE_NET=1)
 endif()
 
 if(LYSYS_FEATURE_MEDIA_CONTROLS)
@@ -115,8 +109,6 @@ if(LYSYS_FEATURE_MEDIA_CONTROLS)
     elseif(APPLE)
         list(APPEND LYSYS_SOURCES ${src}/ls_media_apple.m)
     endif()
-    
-    add_definitions(-DLS_FEATURE_CLIPBOARD=1)
 endif()
 
 if(LYSYS_SHARED)

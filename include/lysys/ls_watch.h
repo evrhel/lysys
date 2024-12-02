@@ -3,8 +3,6 @@
 
 #include "ls_defs.h"
 
-#if LS_FEATURE_FILE_WATCH
-
 #define LS_WATCH_ERROR -1 //!< An error occurred
 #define LS_WATCH_NONE 0 //!< No event
 #define LS_WATCH_ADD 1 //!< File added
@@ -57,7 +55,5 @@ ls_handle ls_watch_dir(const char *dir, int flags);
 //! \return Returns the required number of bytes to store the event,
 //! or -1 on error. If 0 is returned, no events are available.
 size_t ls_watch_get_result(ls_handle watch, struct ls_watch_event *event, size_t cb);
-
-#endif // LS_FEATURE_WATCH
 
 #endif // _LS_FSEVENT_H_

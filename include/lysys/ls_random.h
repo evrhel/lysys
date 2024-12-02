@@ -3,8 +3,6 @@
 
 #include "ls_defs.h"
 
-#if LS_FEATURE_RANDOM
-
 //! \brief Generates a cryptographically secure sequence of random bytes.
 //! 
 //! The random bytes are generated using the system's preferred random number
@@ -39,7 +37,5 @@ double ls_rand_double(void);
 //!		
 //! \return Random float in the range [0, 1), -1 on failure.
 float ls_rand_float(void);
-
-#endif // LS_FEATURE_RANDOM
 
 #endif // _LS_RAND_H_
