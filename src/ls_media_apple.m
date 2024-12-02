@@ -83,8 +83,22 @@ int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
             
             CFRetain(info);
             
+            // TODO: better way to check
             if (mp->data)
+            {
+                if (CFEqual(
+                            CFDictionaryGetValue(mp->data, kMRMediaRemoteNowPlayingInfoTitle),
+                            CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle)
+                            ))
+                {
+                    if (sema)
+                        ls_semaphore_signal(sema);
+                    return;
+                }
+                
+                
                 CFRelease(mp->data);
+            }
             
             mp->data = info;
             
