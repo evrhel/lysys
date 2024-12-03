@@ -265,7 +265,7 @@ failure:
 	ls_watch_emit_error(w);
 }
 
-static void ls_completion_routine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
+static void WINAPI ls_completion_routine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
 {
 	struct ls_watch *w;
 	BOOL b;

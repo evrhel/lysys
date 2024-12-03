@@ -18,9 +18,9 @@ struct mediaplayer
     CFDictionaryRef data;
 #else
 #endif // LS_WINDOWS
-    char title[64];
-    char artist[64];
-    char album[64];
+    char title[256];
+    char artist[128];
+    char album[128];
     double elapsed_time, duration;
     
     int revision;

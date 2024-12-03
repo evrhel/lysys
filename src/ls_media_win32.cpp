@@ -37,22 +37,38 @@ static void populate(IGlobalSystemMediaTransportControlsSessionMediaProperties *
 {
 	HRESULT hr;
 	HSTRING hs;
-
-	ZeroMemory(mp->title, sizeof(mp->title));
-	ZeroMemory(mp->artist, sizeof(mp->artist));
-	ZeroMemory(mp->album, sizeof(mp->album));
+	char title_tmp[256];
 
 	hr = props->get_Title(&hs);
-	if (SUCCEEDED(hr) && hs)
-		copy_hstring(hs, mp->title, sizeof(mp->title));
+	if (FAILED(hr) || !hs)
+	{
+		if (!mp->title[0])
+			return;
 
+		ZeroMemory(mp->title, sizeof(mp->title));
+		ZeroMemory(mp->artist, sizeof(mp->artist));
+		ZeroMemory(mp->album, sizeof(mp->album));
+
+		mp->revision++;
+
+		return;
+	}
+
+	ZeroMemory(title_tmp, sizeof(title_tmp));
+	copy_hstring(hs, title_tmp, sizeof(title_tmp) - 1);
+	if (!strcmp(title_tmp, mp->title))
+		return;
+	strncpy(mp->title, title_tmp, sizeof(mp->title));
+
+	ZeroMemory(mp->artist, sizeof(mp->artist));
 	hr = props->get_Artist(&hs);
 	if (SUCCEEDED(hr) && hs)
-		copy_hstring(hs, mp->artist, sizeof(mp->artist));
+		copy_hstring(hs, mp->artist, sizeof(mp->artist) - 1);
 
+	ZeroMemory(mp->album, sizeof(mp->album));
 	hr = props->get_AlbumTitle(&hs);
 	if (SUCCEEDED(hr) && hs)
-		copy_hstring(hs, mp->album, sizeof(mp->album));
+		copy_hstring(hs, mp->album, sizeof(mp->album) - 1);
 
 	mp->revision++;
 }
