@@ -18,6 +18,9 @@
 #define LS_DIR_PROGRAM_FILES 0x1003
 #define LS_DIR_PROGRAM_FILES_X86 0x1004
 
+#define LS_COMPUTER_NAME_NETBIOS 0
+#define LS_COMPUTER_NAME_DNS 1
+
 size_t ls_username(char *name, size_t size);
 
 size_t ls_home(char *path, size_t size);
@@ -33,5 +36,7 @@ size_t ls_home(char *path, size_t size);
 //! required to store the directory path, including the null terminator. -1
 //! is returned if an error occurs.
 size_t ls_common_dir(int dir, char *path, size_t size);
+
+size_t ls_computer_name(int type, char *name, size_t size);
 
 #endif // _LS_USER_H_

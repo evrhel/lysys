@@ -43,6 +43,9 @@ size_t ls_username(char *name, size_t size)
 		return ls_set_errno(LS_BUFFER_TOO_SMALL);
 
 	memcpy(name, szName, rc);
+	if (rc != size)
+		name[size] = 0;
+
 	return rc;
 #else
 	char *p;
@@ -99,6 +102,9 @@ size_t ls_home(char *path, size_t size)
 		return ls_set_errno(LS_BUFFER_TOO_SMALL);
 
 	memcpy(path, szPath, rc);
+	if (rc != size)
+		path[rc] = 0;
+
 	return rc;
 #else
 	return ls_getenv_buf("HOME", path, size);
@@ -325,4 +331,56 @@ size_t ls_common_dir(int dir, char *path, size_t size)
 	memcpy(path, buf, len);
 	return len - 1;
 #endif // LS_WINDOWS 
+}
+
+size_t ls_computer_name(int type, char *name, size_t size)
+{
+#if LS_WINDOWS
+	COMPUTER_NAME_FORMAT cnf;
+	DWORD cbBuffer;
+	WCHAR szBuffer[UNLEN + 1];
+	BOOL b;
+	char szName[UNLEN + 1];
+	size_t rc;
+
+	// name and size must be both set or unset
+	if (!name != !size)
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+
+	switch (type)
+	{
+	default:
+		return ls_set_errno(LS_INVALID_ARGUMENT);
+	case LS_COMPUTER_NAME_NETBIOS:
+		cnf = ComputerNameNetBIOS;
+		break;
+	case LS_COMPUTER_NAME_DNS:
+		cnf = ComputerNameDnsDomain;
+		break;
+	}
+
+	cbBuffer = UNLEN + 1;
+	b = GetComputerNameExW(ComputerNameNetBIOS, szBuffer, &cbBuffer);
+	if (!b)
+		return ls_set_errno_win32(GetLastError());
+
+	rc = ls_wchar_to_utf8_buf(szBuffer, szName, sizeof(szName));
+	if (!rc)
+		return -1;
+
+	// return the required size
+	if (size == 0)
+		return rc;
+
+	if (size < rc)
+		return ls_set_errno(LS_BUFFER_TOO_SMALL);
+
+	memcpy(name, szName, rc);
+	if (rc != size)
+		name[size] = 0;
+
+	return rc;
+#else
+	return ls_set_errno(LS_NOT_IMPLEMENTED);
+#endif // LS_WINDWOS
 }
