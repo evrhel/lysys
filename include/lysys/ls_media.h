@@ -31,7 +31,11 @@ struct ls_image
 ls_handle ls_media_player_open(void);
 
 int ls_media_player_poll(ls_handle mp, ls_handle sema);
+int ls_media_player_getstatus(ls_handle mp);
 int ls_media_player_get_revision(ls_handle mp);
+
+ls_atom ls_media_player_subscribe(ls_handle mp, ls_handle sema);
+int ls_media_player_unsubscribe(ls_handle mp, ls_atom atom);
 
 unsigned long ls_media_player_getpid(ls_handle mp);
 

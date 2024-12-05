@@ -13,7 +13,8 @@
 struct mediaplayer
 {
 #if LS_WINDOWS
-    ls_lock_t lock;
+    ls_handle sema;
+    void *session_manager; // IGlobalSystemMediaTransportControlsSessionManager *
 #elif LS_DARWIN
     dispatch_queue_t queue;
     CFStringRef artwork_id;
@@ -25,7 +26,7 @@ struct mediaplayer
     char album[128];
     double elapsed_time, duration;
 
-    int is_polling;
+    int status;
     
     int revision;
     
@@ -35,7 +36,8 @@ struct mediaplayer
     void *art_data;
     size_t art_data_length;
     size_t art_data_capacity;
-    
+
+    ls_lock_t lock;
     unsigned long pid;
 };
 

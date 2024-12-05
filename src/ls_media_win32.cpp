@@ -101,6 +101,16 @@ template <typename TResult, typename TProgress, typename TResultInterface>
 class GenericAsyncWithProgressHandler : public BaseAsyncHandler<TResultInterface>, public IAsyncOperationWithProgressCompletedHandler<TResult, TProgress>
 {
 public:
+	static void *STDMETHODCALLTYPE operator new(size_t cb)
+	{
+		return CoTaskMemAlloc(cb);
+	}
+
+	static void STDMETHODCALLTYPE operator delete(void *block)
+	{
+		CoTaskMemFree(block);
+	}
+
 	virtual HRESULT STDMETHODCALLTYPE Invoke(IAsyncOperationWithProgress<TResult, TProgress> *asyncInfo, AsyncStatus status) override
 	{
 		HRESULT hr;
@@ -383,7 +393,7 @@ static HRESULT STDMETHODCALLTYPE populate(IGlobalSystemMediaTransportControlsSes
 	return S_OK;
 }
 
-static HRESULT STDMETHODCALLTYPE is_different(IGlobalSystemMediaTransportControlsSessionMediaProperties *props, struct mediaplayer *mp, bool *is_different)
+static HRESULT WINAPI is_different(struct mediaplayer *mp, IGlobalSystemMediaTransportControlsSessionMediaProperties *props, bool *is_different)
 {
 	HRESULT hr;
 	HSTRING hs;
@@ -414,86 +424,374 @@ static HRESULT STDMETHODCALLTYPE is_different(IGlobalSystemMediaTransportControl
 	return S_OK;
 }
 
-class AsyncPollHandler : public IAsyncOperationCompletedHandler<GlobalSystemMediaTransportControlsSessionManager *>
+static HRESULT WINAPI get_properties(IGlobalSystemMediaTransportControlsSessionManager *manager, IGlobalSystemMediaTransportControlsSessionMediaProperties **pProps)
+{
+	HRESULT hr;
+	IGlobalSystemMediaTransportControlsSession *session;
+	IAsyncOperation<GlobalSystemMediaTransportControlsSessionMediaProperties *> *operation;
+
+	if (!manager || !pProps)
+		return E_POINTER;
+
+	*pProps = NULL;
+
+	hr = manager->GetCurrentSession(&session);
+	if (FAILED(hr))
+		return hr;
+
+	if (!session)
+		return S_OK;
+
+	hr = session->TryGetMediaPropertiesAsync(&operation);
+	session->Release(), session = NULL;
+
+	if (FAILED(hr))
+		return hr;
+
+	hr = Await(operation, pProps);
+	operation->Release(), operation = NULL;
+
+	return hr;
+}
+
+static HRESULT WINAPI read_thumbnail_async(IGlobalSystemMediaTransportControlsSessionMediaProperties *props, IAsyncOperationWithProgress<IBuffer *, UINT32> **out_op)
+{
+	HRESULT hr;
+	IRandomAccessStreamReference *stream_ref;
+	IAsyncOperation<IRandomAccessStreamWithContentType *> *stream_operation;
+	IUnknown *stream;
+	IRandomAccessStream *ras;
+	IInputStream *is;
+	UINT64 size;
+	IBufferFactory *factory;
+	IBuffer *buffer;
+
+	if (!props || !out_op)
+		return E_POINTER;
+
+	*out_op = NULL;
+
+	hr = props->get_Thumbnail(&stream_ref);
+	if (FAILED(hr))
+		return hr;
+
+	if (!stream_ref)
+		return S_OK;
+
+	hr = stream_ref->OpenReadAsync(&stream_operation);
+	stream_ref->Release();
+
+	if (FAILED(hr))
+		return hr;
+
+	hr = Await(stream_operation, (IRandomAccessStreamWithContentType **)&stream);
+	stream_operation->Release();
+
+	if (FAILED(hr))
+		return hr;
+
+	hr = stream->QueryInterface(&ras);
+	if (FAILED(hr))
+	{
+		stream->Release();
+		return hr;
+	}
+
+	hr = stream->QueryInterface(&is);
+	stream->Release();
+
+	if (FAILED(hr))
+	{
+		ras->Release();
+		return hr;
+	}
+
+	hr = ras->get_Size(&size);
+	ras->Release();
+
+	if (FAILED(hr))
+	{
+		is->Release();
+		return hr;
+	}
+
+	hr = GetActivationFactory(
+		HStringReference(RuntimeClass_Windows_Storage_Streams_Buffer).Get(),
+		&factory);
+	if (FAILED(hr))
+	{
+		is->Release();
+		return hr;
+	}
+
+	hr = factory->Create(size, &buffer);
+	factory->Release();
+
+	if (FAILED(hr))
+	{
+		is->Release();
+		return hr;
+	}
+
+	hr = is->ReadAsync(buffer, size, InputStreamOptions::InputStreamOptions_None, out_op);
+	buffer->Release();
+	is->Release();
+
+	if (FAILED(hr))
+		return hr;
+
+	return S_OK;
+}
+
+static HRESULT WINAPI complete_thumbnail(struct mediaplayer *mp, IAsyncOperationWithProgress<IBuffer *, UINT32> *thumbnail_op)
+{
+	HRESULT hr;
+	IBuffer *buffer;
+	IDataReaderStatics *statics;
+	IDataReaderFactory *factory;
+	IDataReader *reader;
+	UINT32 length;
+	void *tmp;
+
+	hr = Await(thumbnail_op, &buffer);
+	if (FAILED(hr))
+		return hr;
+
+	hr = buffer->get_Length(&length);
+	if (FAILED(hr))
+	{
+		buffer->Release();
+		return hr;
+	}
+
+	hr = GetActivationFactory(
+		HStringReference(RuntimeClass_Windows_Storage_Streams_DataReader).Get(),
+		&factory);
+	if (FAILED(hr))
+	{
+		buffer->Release();
+		return hr;
+	}
+
+	hr = factory->QueryInterface(&statics);
+	factory->Release();
+
+	if (FAILED(hr))
+	{
+		buffer->Release();
+		return hr;
+	}
+
+	hr = statics->FromBuffer(buffer, &reader);
+	statics->Release();
+	buffer->Release();
+
+	if (FAILED(hr))
+		return hr;
+
+	if (length > mp->art_data_capacity)
+	{
+		tmp = ls_realloc(mp->art_data, length);
+		if (!tmp)
+		{
+			reader->Release();
+			return E_OUTOFMEMORY;
+		}
+
+		mp->art_data = tmp;
+		mp->art_data_capacity = length;
+	}
+
+	mp->art_data_length = length;
+
+	hr = reader->ReadBytes(length, (BYTE *)mp->art_data);
+	reader->Release();
+
+	if (FAILED(hr))
+		mp->art_data_length = 0;
+
+	return hr;
+}
+
+static HRESULT WINAPI media_fetch(struct mediaplayer *mp)
+{
+	HRESULT hr;
+	IGlobalSystemMediaTransportControlsSessionMediaProperties *props;
+	IAsyncOperationWithProgress<IBuffer *, UINT32> *thumbnail_op;
+	bool different;
+
+	hr = get_properties((IGlobalSystemMediaTransportControlsSessionManager *)mp->session_manager, &props);
+	if (FAILED(hr))
+		return hr;
+
+	if (!props)
+	{
+		if (!mp->title[0])
+			return S_OK;
+
+		ZeroMemory(mp->title, sizeof(mp->title));
+		ZeroMemory(mp->artist, sizeof(mp->artist));
+		ZeroMemory(mp->album, sizeof(mp->album));
+		mp->art_data_length = 0;
+		mp->revision++;
+
+		return S_OK;
+	}
+
+	hr = read_thumbnail_async(props, &thumbnail_op);
+	if (FAILED(hr))
+	{
+		props->Release();
+		return hr;
+	}
+
+	hr = is_different(mp, props, &different);
+	if (FAILED(hr))
+	{
+		if (thumbnail_op) thumbnail_op->Release();
+		props->Release();
+		return hr;
+	}
+
+	if (!different)
+	{
+		if (thumbnail_op) thumbnail_op->Release();
+		props->Release();
+		return S_OK;
+	}
+
+	hr = populate(props, mp);
+	props->Release();
+
+	if (FAILED(hr))
+	{
+		if (thumbnail_op) thumbnail_op->Release();
+		return hr;
+	}
+
+	if (thumbnail_op)
+	{
+		hr = complete_thumbnail(mp, thumbnail_op);
+		thumbnail_op->Release();
+
+		if (FAILED(hr))
+			return hr;
+	}
+
+	mp->revision++;
+
+	return S_OK;
+}
+
+static void WINAPI media_fetch_apc(ULONG_PTR Parameter)
+{
+	HRESULT hr;
+	struct mediaplayer *mp = (struct mediaplayer *)Parameter;
+
+	hr = media_fetch(mp);
+
+	ls_lock(&mp->lock);
+
+	mp->status = hresult_to_error(hr);
+
+	if (mp->sema)
+	{
+		ls_semaphore_signal(mp->sema);
+		mp->sema = NULL;
+	}
+
+	ls_unlock(&mp->lock);
+}
+
+
+EXTERN_C
+int ls_media_player_init_WIN32(struct mediaplayer *mp)
+{
+	HRESULT hr;
+	IGlobalSystemMediaTransportControlsSessionManagerStatics *statics;
+	IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager *> *async_op;
+	IActivationFactory *factory;
+
+	hr = RoGetActivationFactory(
+		HStringReference(RuntimeClass_Windows_Media_Control_GlobalSystemMediaTransportControlsSessionManager).Get(),
+		IID_PPV_ARGS(&factory));
+	if (FAILED(hr))
+		ls_set_errno_hresult(hr);
+
+	hr = factory->QueryInterface(IID_PPV_ARGS(&statics));
+	factory->Release();
+
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = statics->RequestAsync(&async_op);
+	statics->Release();
+	
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	hr = Await(async_op, (IGlobalSystemMediaTransportControlsSessionManager **)&mp->session_manager);
+	async_op->Release();
+
+	if (FAILED(hr))
+		return ls_set_errno_hresult(hr);
+
+	return 0;
+}
+
+EXTERN_C
+void ls_media_player_deinit_WIN32(struct mediaplayer *mp)
+{
+	IGlobalSystemMediaTransportControlsSessionManager *session_manager = (IGlobalSystemMediaTransportControlsSessionManager *)mp->session_manager;
+
+	session_manager->Release();
+}
+
+EXTERN_C
+int ls_media_player_poll_WIN32(struct mediaplayer *mp, ls_handle sema)
+{
+	DWORD dwError;
+
+	lock_lock(&mp->lock);
+
+	if (mp->status == LS_BUSY)
+	{
+		lock_unlock(&mp->lock);
+		return ls_set_errno(LS_BUSY);
+	}
+
+	mp->sema = sema;
+
+	if (!QueueUserAPC(&media_fetch_apc, GetCurrentThread(), (ULONG_PTR)mp))
+	{
+		dwError = GetLastError();
+		ls_unlock(&mp->lock);
+		return ls_set_errno_win32(dwError);
+	}
+
+	mp->status = LS_BUSY;
+
+	lock_unlock(&mp->lock);
+	return 0;
+}
+
+class MediaSubscription : public ITypedEventHandler<GlobalSystemMediaTransportControlsSession *, MediaPropertiesChangedEventArgs *>
 {
 public:
-	virtual HRESULT STDMETHODCALLTYPE Invoke(IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager *> *asyncInfo, AsyncStatus status) override
+	static void *STDMETHODCALLTYPE operator new(size_t cb)
 	{
-		HRESULT hr;
-		IGlobalSystemMediaTransportControlsSessionManager *manager;
-		IGlobalSystemMediaTransportControlsSessionMediaProperties *props;
-		IAsyncOperationWithProgress<IBuffer *, UINT32> *thumbnail_op;
-		bool different;
+		return CoTaskMemAlloc(cb);
+	}
 
-		if (status == Canceled || status == Error)
-			return S_OK;
+	static void STDMETHODCALLTYPE operator delete(void *block)
+	{
+		CoTaskMemFree(block);
+	}
 
-		hr = asyncInfo->GetResults(&manager);
-		if (FAILED(hr))
-			return hr;
-
-		hr = GetProperties(manager, &props);
-		manager->Release();
-
-		if (FAILED(hr))
-			return hr;
-
-		if (!props)
-		{
-			if (!_mp->title[0])
-				return S_OK;
-
-			ZeroMemory(_mp->title, sizeof(_mp->title));
-			ZeroMemory(_mp->artist, sizeof(_mp->artist));
-			ZeroMemory(_mp->album, sizeof(_mp->album));
-			_mp->art_data_length = 0;
-			_mp->revision++;
-
-			return S_OK;
-		}
-
-		hr = ReadThumbnailAsync(props, &thumbnail_op);
-		if (FAILED(hr))
-		{
-			props->Release();
-			return hr;
-		}
-
-		hr = is_different(props, _mp, &different);
-		if (FAILED(hr))
-		{
-			if (thumbnail_op) thumbnail_op->Release();
-			props->Release();
-			return hr;
-		}
-
-		if (!different)
-		{
-			if (thumbnail_op) thumbnail_op->Release();
-			props->Release();
-			return S_OK;
-		}
-
-		hr = populate(props, _mp);
-		props->Release();
-
-		if (FAILED(hr))
-		{
-			if (thumbnail_op) thumbnail_op->Release();
-			return hr;
-		}
-
-		if (thumbnail_op)
-		{
-			hr = CompleteThumbnail(thumbnail_op);
-			thumbnail_op->Release();
-
-			if (FAILED(hr))
-				return hr;
-		}
-
-		_mp->revision++;
-
+	virtual HRESULT STDMETHODCALLTYPE Invoke(IGlobalSystemMediaTransportControlsSession *sender, IMediaPropertiesChangedEventArgs *args)
+	{
+		if (_sema)
+			ls_semaphore_signal(_sema);
 		return S_OK;
 	}
 
@@ -515,7 +813,7 @@ public:
 
 	virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override
 	{
-		if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, __uuidof(IAsyncOperationCompletedHandler<GlobalSystemMediaTransportControlsSessionManager *>)))
+		if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, __uuidof(ITypedEventHandler<GlobalSystemMediaTransportControlsSession *, MediaPropertiesChangedEventArgs *>)))
 		{
 			*ppvObject = this;
 			AddRef();
@@ -526,219 +824,13 @@ public:
 		return E_NOINTERFACE;
 	}
 
-	HRESULT STDMETHODCALLTYPE GetProperties(IGlobalSystemMediaTransportControlsSessionManager *manager, IGlobalSystemMediaTransportControlsSessionMediaProperties **pProps)
-	{
-		HRESULT hr;
-		IGlobalSystemMediaTransportControlsSession *session;
-		IAsyncOperation<GlobalSystemMediaTransportControlsSessionMediaProperties *> *operation;
-
-		if (!manager || !pProps)
-			return E_POINTER;
-
-		*pProps = NULL;
-
-		hr = manager->GetCurrentSession(&session);
-		if (FAILED(hr))
-			return hr;
-
-		if (!session)
-			return S_OK;
-
-		hr = session->TryGetMediaPropertiesAsync(&operation);
-		session->Release(), session = NULL;
-
-		if (FAILED(hr))
-			return hr;
-
-		hr = Await(operation, pProps);
-		operation->Release(), operation = NULL;
-
-		return hr;
-	}
-
-	HRESULT STDMETHODCALLTYPE ReadThumbnailAsync(IGlobalSystemMediaTransportControlsSessionMediaProperties *props, IAsyncOperationWithProgress<IBuffer *, UINT32> **out_op)
-	{
-		HRESULT hr;
-		IRandomAccessStreamReference *stream_ref;
-		IAsyncOperation<IRandomAccessStreamWithContentType *> *stream_operation;
-		IUnknown *stream;
-		IRandomAccessStream *ras;
-		IInputStream *is;
-		UINT64 size;
-		IBufferFactory *factory;
-		IBuffer *buffer;
-
-		if (!props || !out_op)
-			return E_POINTER;
-
-		*out_op = NULL;
-
-		hr = props->get_Thumbnail(&stream_ref);
-		if (FAILED(hr))
-			return hr;
-
-		if (!stream_ref)
-			return S_OK;
-
-		hr = stream_ref->OpenReadAsync(&stream_operation);
-		stream_ref->Release();
-
-		if (FAILED(hr))
-			return hr;
-
-		hr = Await(stream_operation, (IRandomAccessStreamWithContentType **)&stream);
-		stream_operation->Release();
-
-		if (FAILED(hr))
-			return hr;
-
-		hr = stream->QueryInterface(&ras);
-		if (FAILED(hr))
-		{
-			stream->Release();
-			return hr;
-		}
-
-		hr = stream->QueryInterface(&is);
-		stream->Release();
-
-		if (FAILED(hr))
-		{
-			ras->Release();
-			return hr;
-		}
-
-		hr = ras->get_Size(&size);
-		ras->Release();
-
-		if (FAILED(hr))
-		{
-			is->Release();
-			return hr;
-		}
-
-		hr = GetActivationFactory(
-			HStringReference(RuntimeClass_Windows_Storage_Streams_Buffer).Get(),
-			&factory);
-		if (FAILED(hr))
-		{
-			is->Release();
-			return hr;
-		}
-
-		hr = factory->Create(size, &buffer);
-		factory->Release();
-
-		if (FAILED(hr))
-		{
-			is->Release();
-			return hr;
-		}
-
-		hr = is->ReadAsync(buffer, size, InputStreamOptions::InputStreamOptions_None, out_op);
-		buffer->Release();
-		is->Release();
-
-		if (FAILED(hr))
-			return hr;
-
-		return S_OK;
-	}
-
-	HRESULT STDMETHODCALLTYPE CompleteThumbnail(IAsyncOperationWithProgress<IBuffer *, UINT32> *thumbnail_op)
-	{
-		HRESULT hr;
-		IBuffer *buffer;
-		IDataReaderStatics *statics;
-		IDataReaderFactory *factory;
-		IDataReader *reader;
-		UINT32 length;
-		void *tmp;
-
-		hr = Await(thumbnail_op, &buffer);
-		if (FAILED(hr))
-			return hr;
-
-		hr = buffer->get_Length(&length);
-		if (FAILED(hr))
-		{
-			buffer->Release();
-			return hr;
-		}
-
-		hr = GetActivationFactory(
-			HStringReference(RuntimeClass_Windows_Storage_Streams_DataReader).Get(),
-			&factory);
-		if (FAILED(hr))
-		{
-			buffer->Release();
-			return hr;
-		}
-
-		hr = factory->QueryInterface(&statics);
-		factory->Release();
-
-		if (FAILED(hr))
-		{
-			buffer->Release();
-			return hr;
-		}
-
-		hr = statics->FromBuffer(buffer, &reader);
-		statics->Release();
-		buffer->Release();
-
-		if (FAILED(hr))
-			return hr;
-
-		if (length > _mp->art_data_capacity)
-		{
-			tmp = ls_realloc(_mp->art_data, length);
-			if (!tmp)
-			{
-				reader->Release();
-				return E_OUTOFMEMORY;
-			}
-
-			_mp->art_data = tmp;
-			_mp->art_data_capacity = length;
-		}
-
-		_mp->art_data_length = length;
-
-		hr = reader->ReadBytes(length, (BYTE *)_mp->art_data);
-		reader->Release();
-
-		if (FAILED(hr))
-			_mp->art_data_length = 0;
-
-		return hr;
-	}
-
-	void STDMETHODCALLTYPE Signal()
-	{
-		if (_mp)
-		{
-			lock_lock(&_mp->lock);
-			_mp->is_polling = 0;
-			lock_unlock(&_mp->lock);
-
-			_mp = NULL;
-		}
-
-		if (_sema)
-		{
-			ls_semaphore_signal(_sema);
-			_sema = NULL;
-		}
-	}
-
-	AsyncPollHandler(struct mediaplayer *mp, ls_handle sema) :
+	MediaSubscription(struct mediaplayer *mp, ls_handle sema) :
 		_refCount(1), _mp(mp), _sema(sema) {}
 
-	~AsyncPollHandler()
+	~MediaSubscription()
 	{
-		Signal();
+		if (_sema)
+			ls_semaphore_signal(_sema);
 	}
 private:
 	LONG _refCount;
@@ -747,65 +839,52 @@ private:
 };
 
 EXTERN_C
-int ls_media_player_poll_WIN32(struct mediaplayer *mp, ls_handle sema)
+ls_atom ls_media_player_subscribe_WIN32(struct mediaplayer *mp, ls_handle sema)
 {
 	HRESULT hr;
-	IGlobalSystemMediaTransportControlsSessionManagerStatics *statics;
-	IAsyncOperation<GlobalSystemMediaTransportControlsSessionManager *> *async_op;
-	AsyncPollHandler *handler;
-	IActivationFactory *factory;
+	IGlobalSystemMediaTransportControlsSessionManager *session_manager;
+	IGlobalSystemMediaTransportControlsSession *session;
+	MediaSubscription *handler;
+	EventRegistrationToken token;
 
-	lock_lock(&mp->lock);
+	session_manager = (IGlobalSystemMediaTransportControlsSessionManager *)mp->session_manager;
 
-	if (mp->is_polling)
-	{
-		lock_unlock(&mp->lock);
-		return ls_set_errno(LS_BUSY);
-	}
-
-	hr = RoGetActivationFactory(
-		HStringReference(RuntimeClass_Windows_Media_Control_GlobalSystemMediaTransportControlsSessionManager).Get(),
-		IID_PPV_ARGS(&factory));
+	hr = session_manager->GetCurrentSession(&session);
 	if (FAILED(hr))
 	{
-		lock_unlock(&mp->lock);
-		return ls_set_errno_hresult(hr);
+		ls_set_errno_hresult(hr);
+		return 0;
 	}
 
-	hr = factory->QueryInterface(IID_PPV_ARGS(&statics));
-	factory->Release(), factory = NULL;
+	handler = new MediaSubscription(mp, sema);
 
+	hr = session->add_MediaPropertiesChanged(handler, &token);
+	handler->Release();
+	session->Release();
+
+	ls_set_errno_hresult(hr);
+	return token.value;
+}
+
+EXTERN_C
+int ls_media_player_unsubscribe_WIN32(struct mediaplayer *mp, ls_atom atom)
+{
+	HRESULT hr;
+	IGlobalSystemMediaTransportControlsSessionManager *session_manager;
+	IGlobalSystemMediaTransportControlsSession *session;
+	EventRegistrationToken token;
+
+	session_manager = (IGlobalSystemMediaTransportControlsSessionManager *)mp->session_manager;
+
+	hr = session_manager->GetCurrentSession(&session);
 	if (FAILED(hr))
-	{
-		lock_unlock(&mp->lock);
 		return ls_set_errno_hresult(hr);
-	}
 
-	hr = statics->RequestAsync(&async_op);
-	statics->Release(), statics = NULL;
+	token.value = atom;
+	hr = session->remove_MediaPropertiesChanged(token);
+	session->Release();
 
-	if (FAILED(hr))
-	{
-		lock_unlock(&mp->lock);
-		return ls_set_errno_hresult(hr);
-	}
-
-	handler = new AsyncPollHandler(mp, sema);
-	hr = async_op->put_Completed(handler);
-
-	handler->Release(), handler = NULL;
-	async_op->Release(), async_op = NULL;
-
-	if (FAILED(hr))
-	{
-		lock_unlock(&mp->lock);
-		return ls_set_errno_hresult(hr);
-	}
-
-	mp->is_polling = 1;
-
-	lock_unlock(&mp->lock);
-	return 0;
+	return ls_set_errno_hresult(hr);
 }
 
 EXTERN_C

@@ -96,6 +96,7 @@
 #endif // LS_WINDOWS
 
 typedef void *ls_handle;
+typedef long long ls_atom;
 
 #include <stdint.h>
 #include <stddef.h>

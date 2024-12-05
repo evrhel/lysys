@@ -12,7 +12,11 @@ HRESULT WINAPI RoInitialize(_In_ int initType);
 __declspec(dllimport)
 void WINAPI RoUninitialize();
 
+int ls_media_player_init_WIN32(struct mediaplayer *mp);
+void ls_media_player_deinit_WIN32(struct mediaplayer *mp);
 int ls_media_player_poll_WIN32(struct mediaplayer *mp, ls_handle sema);
+ls_atom ls_media_player_subscribe_WIN32(struct mediaplayer *mp, ls_handle sema);
+int ls_media_player_unsubscribe_WIN32(struct mediaplayer *mp, ls_atom atom);
 int ls_media_player_send_command_WIN32(struct mediaplayer *mp, int cname);
 DWORD ls_media_player_getpid_WIN32(struct mediaplayer *mp);
 int ls_media_player_cache_artwork_WIN32(struct mediaplayer *mp);
@@ -32,6 +36,8 @@ double ls_media_player_getvolume_APPLE(struct mediaplayer *mp);
 static void ls_media_player_dtor(struct mediaplayer *mp)
 {
 #if LS_WINDOWS
+    ls_media_player_deinit_WIN32(mp);
+
     RoUninitialize();
     CoUninitialize();
 
@@ -65,6 +71,7 @@ ls_handle ls_media_player_open(void)
 #if LS_WINDOWS
     struct mediaplayer *mp;
     HRESULT hr;
+    int rc;
     
     mp = ls_handle_create(&MediaPlayerClass, 0);
     if (!mp)
@@ -83,7 +90,20 @@ ls_handle ls_media_player_open(void)
     hr = RoInitialize(1); // RO_INIT_MULTITHREADED
     if (FAILED(hr))
     {
+        CoUninitialize();
+        lock_destroy(&mp->lock);
+        ls_handle_dealloc(mp);
         ls_set_errno_hresult(hr);
+        return NULL;
+    }
+
+    rc = ls_media_player_init_WIN32(mp);
+    if (rc)
+    {
+        RoUninitialize();
+        CoUninitialize();
+        lock_destroy(&mp->lock);
+        ls_handle_dealloc(mp);
         return NULL;
     }
 
@@ -125,6 +145,21 @@ int ls_media_player_poll(ls_handle mp, ls_handle sema)
 #endif // LS_WINDOWS
 }
 
+int ls_media_player_getstatus(ls_handle mp)
+{
+    struct mediaplayer *media_player = mp;
+    int status;
+
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return -1;
+
+    lock_lock(&media_player->lock);
+    status = media_player->status;
+    lock_unlock(&media_player->lock);
+
+    return ls_set_errno(status);
+}
+
 int ls_media_player_get_revision(ls_handle mp)
 {
     struct mediaplayer *media_player = mp;
@@ -132,6 +167,32 @@ int ls_media_player_get_revision(ls_handle mp)
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
     return media_player->revision;
+}
+
+ls_atom ls_media_player_subscribe(ls_handle mp, ls_handle sema)
+{
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return 0;
+    return ls_media_player_subscribe_WIN32(mp, sema);
+#if LS_WINDOWS
+#elif LS_DARWIN
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#else
+    return ls_set_errno(LS_NOT_SUPPORTED);
+#endif // LS_WINDOWS
+}
+
+int ls_media_player_unsubscribe(ls_handle mp, ls_atom atom)
+{
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return 0;
+    return ls_media_player_unsubscribe_WIN32(mp, atom);
+#if LS_WINDOWS
+#elif LS_DARWIN
+    return ls_set_errno(LS_NOT_IMPLEMENTED);
+#else
+    return ls_set_errno(LS_NOT_SUPPORTED);
+#endif // LS_WINDOWS
 }
 
 unsigned long ls_media_player_getpid(ls_handle mp)
