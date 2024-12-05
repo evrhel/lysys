@@ -33,6 +33,11 @@ static void ls_media_player_dtor(struct mediaplayer *mp)
 {
 #if LS_WINDOWS
     RoUninitialize();
+    CoUninitialize();
+
+    lock_destroy(&mp->lock);
+
+    ls_free(mp->art_data);
 #elif LS_DARWIN
     if (mp->artwork_id)
         CFRelease(mp->artwork_id);
@@ -64,6 +69,16 @@ ls_handle ls_media_player_open(void)
     mp = ls_handle_create(&MediaPlayerClass, 0);
     if (!mp)
         return NULL;
+
+    lock_init(&mp->lock);
+
+    hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr))
+    {
+        lock_destroy(&mp->lock);
+        ls_handle_dealloc(mp);
+        return ls_set_errno_hresult(hr);
+    }
 
     hr = RoInitialize(1); // RO_INIT_MULTITHREADED
     if (FAILED(hr))
@@ -207,6 +222,50 @@ int ls_media_player_getartwork(ls_handle mp, struct ls_image *artwork)
     
     memcpy(artwork, &media_player->art, sizeof(struct ls_image));
     return 0;
+}
+
+const void *ls_media_player_get_raw_artwork(ls_handle mp, size_t *length)
+{
+    struct mediaplayer *media_player = mp;
+
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return NULL;
+
+    if (!length)
+    {
+        ls_set_errno(LS_INVALID_ARGUMENT);
+        return NULL;
+    }
+
+    if (!media_player->art_data_length)
+    {
+        ls_set_errno(LS_SUCCESS);
+        return NULL;
+    }
+
+    *length = media_player->art_data_length;
+    return media_player->art_data;
+}
+
+const char *ls_media_player_get_raw_artwork_type(ls_handle mp)
+{
+    struct mediaplayer *media_player = mp;
+
+    if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
+        return NULL;
+
+    if (!media_player->art_data_length)
+    {
+        ls_set_errno(LS_NOT_FOUND);
+        return NULL;
+    }
+
+#if LS_WINDOWS
+    return "image/png";
+#else
+    ls_set_errno(LS_NOT_IMPLEMENTED);
+    return NULL;
+#endif // LS_WINDOWS
 }
 
 int ls_media_player_setstring(ls_handle mp, int pname, const char *val)

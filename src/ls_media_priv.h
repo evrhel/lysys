@@ -2,6 +2,7 @@
 #define _LS_MEDIA_PRIV_H_
 
 #include <lysys/ls_media.h>
+#include "ls_sync_util.h"
 
 #if LS_WINDOWS
 #include "ls_native.h"
@@ -12,6 +13,7 @@
 struct mediaplayer
 {
 #if LS_WINDOWS
+    ls_lock_t lock;
 #elif LS_DARWIN
     dispatch_queue_t queue;
     CFStringRef artwork_id;
@@ -22,6 +24,8 @@ struct mediaplayer
     char artist[128];
     char album[128];
     double elapsed_time, duration;
+
+    int is_polling;
     
     int revision;
     

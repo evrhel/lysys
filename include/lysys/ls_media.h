@@ -41,6 +41,8 @@ const char *ls_media_player_getstring(ls_handle mp, int pname);
 double ls_media_player_getdouble(ls_handle mp, int pname);
 
 int ls_media_player_getartwork(ls_handle mp, struct ls_image *artwork);
+const void *ls_media_player_get_raw_artwork(ls_handle mp, size_t *length);
+const char *ls_media_player_get_raw_artwork_type(ls_handle mp);
 
 int ls_media_player_setstring(ls_handle mp, int pname, const char *val);
 int ls_media_player_setdouble(ls_handle mp, int pname, double val);
