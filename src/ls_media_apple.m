@@ -20,6 +20,12 @@
 #define kMRGoBackFifteenSeconds 12
 #define kMRSkipFifteenSeconds 13
 
+extern CFStringRef kMRMediaRemoteNowPlayingInfoDidChangeNotification;
+extern CFStringRef kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification;
+
+extern CFStringRef kMRMediaRemoteNowPlayingApplicationIsPlayingUserInfoKey;
+extern CFStringRef kMRMediaRemoteNowPlayingApplicationPIDUserInfoKey;
+
 extern CFStringRef kMRMediaRemoteNowPlayingInfoAlbum;
 extern CFStringRef kMRMediaRemoteNowPlayingInfoArtist;
 extern CFStringRef kMRMediaRemoteNowPlayingInfoArtworkData;
@@ -29,6 +35,8 @@ extern CFStringRef kMRMediaRemoteNowPlayingInfoTimestamp;
 extern CFStringRef kMRMediaRemoteNowPlayingInfoTitle;
 extern CFStringRef kMRMediaRemoteNowPlayingInfoArtworkIdentifier;
 
+extern CFStringRef kMRMediaRemoteUpdatedContentItemsUserInfoKey;
+
 typedef void (^MRMediaRemoteGetNowPlayingInfoCompletion)(CFDictionaryRef info);
 typedef void (^MRMediaRemoteGetNowPlayingApplicationPIDCompletion)(int pid);
 
@@ -36,7 +44,20 @@ extern Boolean MRMediaRemoteSendCommand(int command, id userInfo);
 extern void MRMediaRemoteGetNowPlayingApplicationPID(dispatch_queue_t queue, MRMediaRemoteGetNowPlayingApplicationPIDCompletion completion);
 extern void MRMediaRemoteGetNowPlayingInfo(dispatch_queue_t queue, MRMediaRemoteGetNowPlayingInfoCompletion completion);
 
+extern void MRMediaRemoteRegisterForNowPlayingNotifications(dispatch_queue_t queue);
+extern void MRMediaRemoteUnregisterForNowPlayingNotifications();
+
 #define cfstring_to_array(cfstring, array) CFStringGetBytes((cfstring), CFRangeMake(0, CFStringGetLength((cfstring))), kCFStringEncodingUTF8, 0, false, (UInt8 *)(array), sizeof((array)), NULL)
+
+@interface MediaSubscription : NSObject
+
+- (instancetype)init:(ls_handle)sema player:(struct mediaplayer *)player;
+- (void)dealloc;
+
+- (void)nowPlayingInfoDidChange:(NSNotification *)notification;
+- (void)nowPlayingAppIsPlayingDidChange:(NSNotification *)notification;
+
+@end
 
 static void populate_mediaplayer(struct mediaplayer *mp, CFDictionaryRef info)
 {
@@ -48,6 +69,9 @@ static void populate_mediaplayer(struct mediaplayer *mp, CFDictionaryRef info)
     memset(mp->album, 0, sizeof(mp->album));
     mp->elapsed_time = 0.0;
     mp->duration = 0.0;
+    
+    if (!info)
+        return;
     
     string = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle);
     if (string)
@@ -70,58 +94,203 @@ static void populate_mediaplayer(struct mediaplayer *mp, CFDictionaryRef info)
         CFNumberGetValue(number, kCFNumberDoubleType, &mp->duration);
 }
 
+static void handle_info_update(struct mediaplayer *mp, CFDictionaryRef info, unsigned long pid)
+{
+    CFStringRef artwork_id;
+    
+    lock_lock(&mp->lock);
+    
+    mp->pid = pid;
+    
+    if (!info)
+    {
+        if (mp->data)
+        {
+            CFRelease(mp->data);
+            mp->data = nil;
+            
+            if (mp->artwork_id)
+            {
+                CFRelease(mp->artwork_id);
+                mp->artwork_id = nil;
+                
+                mp->art_out_of_date = YES;
+            }
+            
+            mp->revision++;
+            populate_mediaplayer(mp, info);
+        }
+        
+        lock_unlock(&mp->lock);
+        return;
+    }
+    
+    CFRetain(info);
+    
+    // TODO: better way to check
+    if (mp->data)
+    {
+        if (CFEqual(
+                    CFDictionaryGetValue(mp->data, kMRMediaRemoteNowPlayingInfoTitle),
+                    CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle)
+                    ))
+        {
+            lock_unlock(&mp->lock);
+            CFRelease(info);
+            return;
+        }
+        
+        
+        CFRelease(mp->data);
+    }
+    
+    mp->data = info;
+    
+    artwork_id = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoArtworkIdentifier);
+    if (!mp->artwork_id || !CFEqual(mp->artwork_id, artwork_id))
+    {
+        if (mp->artwork_id)
+            CFRelease(mp->artwork_id);
+        mp->artwork_id = CFRetain(artwork_id);
+        
+        mp->art_out_of_date = 1;
+    }
+    
+    mp->revision++;
+    
+    populate_mediaplayer(mp, info);
+    
+    lock_unlock(&mp->lock);
+}
+
+static id get_metadata_or_nil(NSDictionary *dict)
+{
+    NSArray *content_array;
+    id content_item, metadata;
+    
+    content_array = dict[(__bridge NSString *)kMRMediaRemoteUpdatedContentItemsUserInfoKey];
+    if (!content_array)
+        return nil;
+    
+    if (![content_array count])
+        return nil;
+    
+    content_item = content_array[0];
+    if (![content_item respondsToSelector:@selector(metadata)])
+        return nil;
+    
+    return [content_item performSelector:@selector(metadata)];
+}
+
+@implementation MediaSubscription
+
+dispatch_queue_t queue;
+ls_handle semaphore;
+struct mediaplayer *mp;
+
+- (instancetype)init:(ls_handle)sema player:(struct mediaplayer *)player
+{
+    queue = dispatch_queue_create(NULL, DISPATCH_QUEUE_SERIAL);
+    semaphore = sema;
+    mp = player;
+    
+    MRMediaRemoteRegisterForNowPlayingNotifications(queue);
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                          selector:@selector(nowPlayingInfoDidChange:)
+                                          name:(__bridge NSString *)kMRMediaRemoteNowPlayingInfoDidChangeNotification
+                                          object:nil];
+    
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                          selector:@selector(nowPlayingAppIsPlayingDidChange:)
+                                          name:(__bridge NSString *)kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification
+                                          object:nil];
+}
+
+- (void)dealloc
+{
+    MRMediaRemoteUnregisterForNowPlayingNotifications();
+    dispatch_release(queue);
+    [super dealloc];
+}
+
+- (void)nowPlayingInfoDidChange:(NSNotification *)notification
+{
+    NSArray *content_array;
+    id content_item;
+    id metadata;
+    NSNumber *is_playing;
+    NSString *title, *old_title;
+    BOOL was_updated = NO;
+    
+    metadata = get_metadata_or_nil(notification.userInfo);
+    if (metadata)
+    {
+        title = [metadata title];
+        
+        if (title)
+        {
+            lock_lock(&mp->lock);
+            old_title = [NSString stringWithUTF8String:mp->title];
+            lock_unlock(&mp->lock);
+            
+            was_updated = ![title isEqualToString:old_title];
+            //[old_title release];
+        }
+    }
+    else
+    {
+        was_updated = YES;
+    }
+    
+    if (was_updated)
+        ls_semaphore_signal(semaphore);
+}
+
+- (void)nowPlayingAppIsPlayingDidChange:(NSNotification *)notification
+{
+    // TODO: handle notification
+}
+
+@end
+
+static MediaSubscription *_subscription = nil;
+
 int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema)
 {
     if (sema && ls_type_check(sema, LS_SEMAPHORE) != 0)
         return -1;
     
     MRMediaRemoteGetNowPlayingApplicationPID(mp->queue, ^(int pid) {
-        mp->pid = pid;
-        
         MRMediaRemoteGetNowPlayingInfo(mp->queue, ^(CFDictionaryRef info) {
-            CFStringRef artwork_id;
-            
-            CFRetain(info);
-            
-            // TODO: better way to check
-            if (mp->data)
-            {
-                if (CFEqual(
-                            CFDictionaryGetValue(mp->data, kMRMediaRemoteNowPlayingInfoTitle),
-                            CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoTitle)
-                            ))
-                {
-                    if (sema)
-                        ls_semaphore_signal(sema);
-                    return;
-                }
-                
-                
-                CFRelease(mp->data);
-            }
-            
-            mp->data = info;
-            
-            artwork_id = CFDictionaryGetValue(info, kMRMediaRemoteNowPlayingInfoArtworkIdentifier);
-            if (!mp->artwork_id || !CFEqual(mp->artwork_id, artwork_id))
-            {
-                if (mp->artwork_id)
-                    CFRelease(mp->artwork_id);
-                mp->artwork_id = CFRetain(artwork_id);
-                
-                mp->art_out_of_date = 1;
-            }
-            
-            mp->revision++;
-            
-            populate_mediaplayer(mp, info);
-            
-            if (sema)
-                ls_semaphore_signal(sema);
+            handle_info_update(mp, info, pid);
+            ls_semaphore_signal(sema);
         });
     });
     
     return 0;
+}
+
+ls_atom ls_media_player_subscribe_APPLE(struct mediaplayer *mp, ls_handle sema)
+{
+    if (_subscription)
+    {
+        ls_set_errno(LS_BUSY);
+        return 0;
+    }
+    
+    _subscription = [[MediaSubscription alloc] init:sema player:mp];
+    
+    return 1;
+}
+
+int ls_media_player_unsubscribe_APPLE(struct mediaplayer *mp, ls_atom atom)
+{
+    if (!_subscription || atom != 1)
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+    
+    [_subscription release];
+    _subscription = nil;
 }
 
 static BOOL is_muted(void)
@@ -288,18 +457,18 @@ int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname)
         r = MRMediaRemoteSendCommand(kMRSkipFifteenSeconds, 0);
         break;
     case LS_MEDIA_COMMAND_MUTE:
-        return set_muted(TRUE);
+        return set_muted(YES);
     case LS_MEDIA_COMMAND_UNMUTE:
-        return set_muted(FALSE);
+        return set_muted(NO);
     case LS_MEDIA_COMMAND_MUTEUNMUTE:
         if (!is_muted())
         {
             if (_ls_errno)
                 return -1;
-            return set_muted(TRUE);
+            return set_muted(YES);
         }
             
-        return set_muted(FALSE);
+        return set_muted(NO);
     }
     
     if (!r)
