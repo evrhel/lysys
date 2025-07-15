@@ -131,7 +131,7 @@ static size_t ls_cache_string(const char *name, const struct string *path_str, c
 			return -1;
 
 		if (!path_str)
-			return ls_set_errno(LS_INVALID_ARGUMENT);
+			return -1;
 
 		entry = ls_map_insert(_cache, ANY_CPTR(name), ANY_CPTR(path_str));
 		if (!entry)

@@ -324,7 +324,7 @@ void ls_strlower(char *str, size_t len)
 		return;
 	}
 
-	for (i = 0; *str && i < len; i++)
+	for (i = 0; str[i] && i < len; i++)
 		str[i] = ls_tolower(str[i]);
 }
 
@@ -338,7 +338,7 @@ void ls_wstrlower(wchar_t *str, size_t len)
 		return;
 	}
 
-	for (i = 0; *str && i < len; i++)
+	for (i = 0; str[i] && i < len; i++)
 		str[i] = ls_wtolower(str[i]);
 }
 
@@ -352,7 +352,7 @@ void ls_strupper(char *str, size_t len)
 		return;
 	}
 
-	for (i = 0; *str && i < len; i++)
+	for (i = 0; str[i] && i < len; i++)
 		str[i] = ls_toupper(str[i]);
 }
 
@@ -366,6 +366,6 @@ void ls_wstrupper(wchar_t *str, size_t len)
 		return;
 	}
 
-	for (i = 0; *str && i < len; i++)
+	for (i = 0; str[i] && i < len; i++)
 		str[i] = ls_wtoupper(str[i]);
 }
