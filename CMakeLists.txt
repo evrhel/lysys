@@ -52,6 +52,7 @@ message(STATUS "Media Controls? ${LYSYS_FEATURE_MEDIA_CONTROLS}")
 message(STATUS "Shared? ${LYSYS_SHARED}")
 
 set(LYSYS_SOURCES
+    ${src}/ls_async.c
     ${src}/ls_buffer.c
     ${src}/ls_core.c
     ${src}/ls_event.c
