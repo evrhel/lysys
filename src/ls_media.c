@@ -25,6 +25,8 @@ int ls_media_player_setvolume_WIN32(struct mediaplayer *mp, double volume);
 double ls_media_player_getvolume_WIN32(struct mediaplayer *mp);
 #elif LS_DARWIN
 int ls_media_player_poll_APPLE(struct mediaplayer *mp, ls_handle sema);
+ls_atom ls_media_player_subscribe_APPLE(struct mediaplayer *mp, ls_handle sema);
+int ls_media_player_unsubscribe_APPLE(struct mediaplayer *mp, ls_atom atom);
 int ls_media_player_send_command_APPLE(struct mediaplayer *mp, int cname);
 pid_t ls_media_player_getpid_APPLE(struct mediaplayer *mp);
 int ls_media_player_cache_artwork_APPLE(struct mediaplayer *mp);
@@ -45,6 +47,8 @@ static void ls_media_player_dtor(struct mediaplayer *mp)
 
     ls_free(mp->art_data);
 #elif LS_DARWIN
+    lock_destroy(&mp->lock);
+    
     if (mp->artwork_id)
         CFRelease(mp->artwork_id);
     
@@ -122,6 +126,8 @@ ls_handle ls_media_player_open(void)
         ls_set_errno(LS_OUT_OF_MEMORY);
         return NULL;
     }
+    
+    lock_init(&mp->lock);
 
     return mp;
 #else
@@ -173,10 +179,10 @@ ls_atom ls_media_player_subscribe(ls_handle mp, ls_handle sema)
 {
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return 0;
-    return ls_media_player_subscribe_WIN32(mp, sema);
 #if LS_WINDOWS
+    return ls_media_player_subscribe_WIN32(mp, sema);
 #elif LS_DARWIN
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    return ls_media_player_subscribe_APPLE(mp, sema);
 #else
     return ls_set_errno(LS_NOT_SUPPORTED);
 #endif // LS_WINDOWS
@@ -186,10 +192,10 @@ int ls_media_player_unsubscribe(ls_handle mp, ls_atom atom)
 {
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return 0;
-    return ls_media_player_unsubscribe_WIN32(mp, atom);
 #if LS_WINDOWS
+    return ls_media_player_unsubscribe_WIN32(mp, atom);
 #elif LS_DARWIN
-    return ls_set_errno(LS_NOT_IMPLEMENTED);
+    return ls_media_player_unsubscribe_APPLE(mp, atom);
 #else
     return ls_set_errno(LS_NOT_SUPPORTED);
 #endif // LS_WINDOWS
@@ -206,9 +212,9 @@ unsigned long ls_media_player_getpid(ls_handle mp)
 
 int ls_media_player_send_command(ls_handle mp, int cname)
 {
-#if LS_WINDOWS
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)
         return -1;
+#if LS_WINDOWS
     return ls_media_player_send_command_WIN32(mp, cname);
 #elif LS_DARWIN
     if (ls_type_check(mp, LS_MEDIAPLAYER) != 0)

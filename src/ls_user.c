@@ -13,6 +13,12 @@
 
 #include "ls_native.h"
 
+#if LS_DARWIN
+/*#include <CoreFoundation/CoreFoundation.h>
+#include <Foundation/Foundation.h>
+#include <SystemConfiguration/SystemConfiguration.h>*/
+#endif // LS_DARWIN
+
 size_t ls_username(char *name, size_t size)
 {
 #if LS_WINDOWS
@@ -380,6 +386,36 @@ size_t ls_computer_name(int type, char *name, size_t size)
 		name[size] = 0;
 
 	return rc;
+#elif LS_DARWIN
+    /*CFStringRef local_host_name;
+    CFIndex length;
+    
+    if (!name != !size)
+        return ls_set_errno(LS_INVALID_ARGUMENT);
+    
+    local_host_name = SCDynamicStoreCopyLocalHostName(NULL);
+    if (!local_host_name)
+        return ls_set_errno(LS_NOT_FOUND);
+    
+    length = CFStringGetLength(local_host_name);
+    
+    if (size == 0)
+    {
+        CFRelease(local_host_name);
+        return length + 1;
+    }
+    
+    if (size < length + 1)
+    {
+        CFRelease(local_host_name);
+        return ls_set_errno(LS_BUFFER_TOO_SMALL);
+    }
+    
+    CFStringGetCString(local_host_name, name, size, kCFStringEncodingUTF8);
+    CFRelease(local_host_name);
+    
+    return length;*/
+    return 0;
 #else
 	return ls_set_errno(LS_NOT_IMPLEMENTED);
 #endif // LS_WINDWOS
